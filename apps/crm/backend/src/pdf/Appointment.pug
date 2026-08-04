@@ -1,0 +1,197 @@
+doctype html
+html
+  head
+    meta(name="viewport" content="width=device-width, initial-scale=1")
+    style.
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        font-size: 12px;
+        color: #222;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 3px solid #00295f;
+        padding-bottom: 10px;
+      }
+      .header .logo { height: 64px; }
+      .title {
+        text-align: center;
+        line-height: 1.4;
+      }
+      .title h1 {
+        margin: 0;
+        font-size: 17px;
+        color: #00295f;
+        letter-spacing: 1px;
+      }
+      .title h2 {
+        margin: 2px 0 0;
+        font-size: 14px;
+        color: #222;
+        font-weight: 600;
+      }
+      .section-title {
+        margin: 18px 0 8px;
+        padding: 6px 10px;
+        background: #00295f;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+      table.fields {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      table.fields td {
+        border: 1px solid #aaa;
+        padding: 7px 9px;
+        vertical-align: top;
+      }
+      table.fields td.label {
+        background: #eef3fa;
+        font-weight: 600;
+        width: 22%;
+        color: #00295f;
+      }
+      table.fields td.value {
+        width: 28%;
+      }
+      .sign {
+        margin-top: 34px;
+        border: 1px dashed #555;
+        padding: 18px 20px 30px;
+        position: relative;
+      }
+      .sign .sign-title {
+        position: absolute;
+        top: -10px;
+        left: 16px;
+        background: #fff;
+        padding: 0 6px;
+        font-weight: 700;
+        color: #00295f;
+      }
+      .sign .row {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 44px;
+        font-size: 11px;
+      }
+      .sign .row .line {
+        border-top: 1px solid #222;
+        padding-top: 4px;
+        width: 42%;
+        text-align: center;
+      }
+      .footer {
+        margin-top: 22px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 10px;
+        color: #666;
+        border-top: 1px solid #ccc;
+        padding-top: 6px;
+      }
+      .note {
+        margin-top: 12px;
+        font-size: 10px;
+        color: #777;
+      }
+
+  body
+    - const isDom = model.type === 'visita_domiciliaria';
+    - const client = model.client || {};
+    - const meta = (client && client.metadata) || {};
+    - const doctor = model.doctor || {};
+    - const opportunity = model.opportunity || {};
+    - const fmt = (v) => (v === null || v === undefined || v === '' ? '' : String(v));
+    - const servicio = fmt(model.serviceName || opportunity.service || '');
+    - const poliza = fmt(model.policyNumber || meta.afiliado || meta.poliza || '');
+    - const ars = fmt(meta.seguro || meta.ars || '');
+    - let edad = '';
+    - if (meta.fecha_nacimiento) {
+    -   const nac = new Date(meta.fecha_nacimiento);
+    -   if (!isNaN(nac.getTime())) edad = Math.floor((Date.now() - nac.getTime()) / (365.25 * 24 * 3600 * 1000));
+    - }
+
+    .header
+      img.logo(src=logoDataUri || (settings.public_server_file + settings.company_logo))
+      .title
+        if isDom
+          h1 SERVICIOS DE ATENCIÓN DOMICILIARIA INTEGRAL
+        else
+          h1 FICHA DE ATENCIÓN
+        h2 PLANILLA DE SOLICITUD – FICHA TECNICA
+
+    .section-title DATOS DEL AFILIADO
+    table.fields
+      tr
+        td.label Número de Póliza
+        td.value #{poliza}
+        td.label Núm.
+        td.value
+      tr
+        td.label Cédula
+        td.value #{fmt(client.identity_number)}
+        td.label Nombre y Apellido
+        td.value #{fmt(client.name)}
+      tr
+        td.label Teléfono
+        td.value #{fmt(client.phone)}
+        td.label Mail
+        td.value #{fmt(client.email)}
+      tr
+        td.label Calle
+        td.value #{fmt(client.address)}
+        td.label Sector
+        td.value #{fmt(model.sector)}
+      tr
+        td.label Servicio Solicitado
+        td.value(colspan='3') #{servicio}
+      tr
+        td.label ARS
+        td.value #{ars}
+        td.label Médico de Cabecera/Tratante
+        td.value #{fmt(doctor.name)}
+      tr
+        td.label Edad
+        td.value #{edad}
+        td.label Fecha de Servicio
+        td.value #{moment(model.date).format(dateFormat)}
+
+    .section-title DATOS DEL FAMILIAR Y/O RESPONSABLE
+    table.fields
+      tr
+        td.label Nombre y Apellido
+        td.value #{fmt(model.familyName)}
+        td.label Núm. documento
+        td.value #{fmt(model.familyIdNumber)}
+      tr
+        td.label Teléfono
+        td.value #{fmt(model.familyPhone)}
+        td.label Domicilio
+        td.value #{fmt(model.familyDomicile)}
+      tr
+        td.label Mail
+        td.value #{fmt(model.familyEmail)}
+        td.label
+        td.value
+
+    .sign
+      .sign-title FIRMA
+      .row
+        .line Firma del Paciente / Responsable
+        .line Fecha
+
+    .note Este documento se genera automáticamente a partir de los datos registrados en el CRM.
+    .footer
+      span Ficha técnica
+      span Vers. 1.01
+      span #{settings.company_name} S.R.L. | RNC: #{settings.company_tax_number} | Tel: #{settings.company_phone} | WhatsApp: #{settings.company_whatsapp}

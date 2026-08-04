@@ -1,0 +1,44 @@
+[
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_show_product_tax",
+    "settingValue": false,
+    "valueType": "boolean"
+  },
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_load_default_client",
+    "settingValue": false,
+    "valueType": "boolean"
+  },
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_pdf_footer",
+    "settingValue": "UNIDOLOR - Medicina del Dolor, Cuidados Paliativos y Atención Domiciliaria | Ave. Gustavo Mejía Ricart No. 54, Torre Solazar, Piso 3, Local 3F, Ensanche Naco, Santo Domingo | RNC: 131080219 | Tel: 809-636-3656 | WhatsApp: 829-263-4143 | info@unidolor.com",
+    "valueType": "string"
+  },
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_status",
+    "settingValue": ["borrador", "pendiente", "enviada", "recibida", "reembolsada", "anulada", "en espera"],
+    "valueType": "array"
+  },
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_itbis_salud",
+    "settingValue": 0,
+    "valueType": "number"
+  },
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_itbis_general",
+    "settingValue": 18,
+    "valueType": "number"
+  },
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_isr_retencion",
+    "settingValue": 10,
+    "valueType": "number"
+  }
+]

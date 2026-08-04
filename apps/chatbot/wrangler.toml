@@ -1,0 +1,40 @@
+name = "unidolor-bot"
+main = "src/index.js"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[placement]
+mode = "smart"
+
+# ---------------------------------------------------------------------------
+# ELIMINAR "juanemilioabreu" de los links (cero costo, inmediato):
+#   El subdomain workers.dev de la cuenta es configurable. En el dashboard de
+#   Cloudflare: Workers & Pages → "Your subdomain" → Change → "unidolor".
+#   Magic link: https://dash.cloudflare.com/?to=/:account/workers/subdomain
+#   Después del cambio, los URLs quedan así: unidolor-bot.unidolor.workers.dev
+#   (SITE_URL en src/knowledge.js ya apunta a ese dominio nuevo).
+#
+# DOMINIO PROPIO (opcional, más profesional, cero costo con .eu.org):
+# 1. Registra un dominio gratuito en nic.eu.org (ej. unidolor.eu.org).
+#    La aprobación tarda de días a semanas.
+# 2. Agrega el dominio a Cloudflare (plan Free) y cambia sus nameservers
+#    a los que Cloudflare te asigne (desde nic.eu.org → "Manage nameservers").
+# 3. Cuando el dominio esté activo, descomenta la línea de abajo:
+# routes = [
+#   { pattern = "unidolor.eu.org", custom_domain = true }
+# ]
+# 4. Actualiza SITE_URL en src/knowledge.js al dominio nuevo y haz deploy.
+# ---------------------------------------------------------------------------
+
+[[kv_namespaces]]
+binding = "SEGUIMIENTO"
+id = "cdd32037071442a18a4750ecffdad0ef"
+
+[triggers]
+crons = ["0 */6 * * *"]
+
+[vars]
+# Secrets configurados via `wrangler secret put`: META_WEBHOOK_TOKEN ✅, META_APP_SECRET ✅,
+# META_PHONE_NUMBER_ID ✅, META_ACCESS_TOKEN ✅, GEMINI_API_KEY ✅,
+# ESCALATION_PHONE_NUMBER ✅, GROQ_API_KEY ✅, CRM_WEBHOOK_URL ✅, CRM_API_KEY ✅
+# TEST_MODE ❌ NO configurar en nube (solo local)

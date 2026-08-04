@@ -1,0 +1,36 @@
+export const fields = {
+  client: {
+    type: 'search',
+    dataIndex: ['client', 'name'],
+    entity: 'client',
+    displayLabels: ['name'],
+    searchFields: 'name',
+    outputValue: '_id',
+    label: 'Paciente',
+  },
+  plan: {
+    type: 'async',
+    dataIndex: ['plan', 'name'],
+    entity: 'insuranceplan',
+    displayLabels: ['name'],
+    outputValue: '_id',
+    label: 'Plan ARS',
+  },
+  service: { type: 'string', label: 'Servicio' },
+  amount: { type: 'currency', label: 'Monto solicitado' },
+  authorizedAmount: { type: 'currency', label: 'Monto autorizado' },
+  authorizationNumber: { type: 'string', label: 'N° Autorización' },
+  status: {
+    type: 'selectWithTranslation',
+    options: [
+      { value: 'pendiente', label: 'Pendiente', color: 'orange' },
+      { value: 'aprobada', label: 'Aprobada', color: 'green' },
+      { value: 'rechazada', label: 'Rechazada', color: 'red' },
+      { value: 'vencida', label: 'Vencida', color: 'gray' },
+    ],
+    renderAsTag: true,
+    label: 'Estado',
+  },
+  validUntil: { type: 'date', label: 'Válida hasta' },
+  notes: { type: 'textarea', label: 'Notas' },
+};

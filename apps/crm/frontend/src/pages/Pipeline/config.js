@@ -1,0 +1,55 @@
+export const fields = {
+  client: {
+    type: 'search',
+    dataIndex: ['client', 'name'],
+    entity: 'client',
+    displayLabels: ['name'],
+    searchFields: 'name',
+    outputValue: '_id',
+    label: 'Cliente',
+  },
+  stage: {
+    type: 'selectWithTranslation',
+    options: [
+      { value: 'solicitud', label: 'Solicitud', color: 'blue' },
+      { value: 'recepcion_informacion', label: 'Recepción de información', color: 'cyan' },
+      { value: 'verificacion_datos', label: 'Verificación de datos', color: 'geekblue' },
+      { value: 'clasificacion_caso', label: 'Clasificación del caso', color: 'gold' },
+      { value: 'cotizacion_autorizacion', label: 'Cotización o autorización', color: 'purple' },
+      { value: 'programacion', label: 'Programación', color: 'magenta' },
+      { value: 'confirmacion', label: 'Confirmación', color: 'orange' },
+      { value: 'preparacion', label: 'Preparación', color: 'volcano' },
+      { value: 'ejecucion', label: 'Ejecución', color: 'green' },
+      { value: 'documentacion', label: 'Documentación', color: 'lime' },
+      { value: 'facturacion', label: 'Facturación', color: 'green' },
+      { value: 'seguimiento', label: 'Seguimiento', color: 'cyan' },
+      { value: 'cierre_caso', label: 'Cierre del caso', color: 'blue' },
+      { value: 'perdido', label: 'Perdido', color: 'red' },
+    ],
+    renderAsTag: true,
+    label: 'Etapa',
+  },
+  service: {
+    type: 'string',
+    label: 'Servicio',
+  },
+  source: {
+    type: 'selectWithTranslation',
+    options: [
+      { value: 'whatsapp', label: 'WhatsApp', color: 'green' },
+      { value: 'manual', label: 'Manual', color: 'blue' },
+      { value: 'web', label: 'Web', color: 'cyan' },
+      { value: 'referido', label: 'Referido', color: 'gold' },
+    ],
+    renderAsTag: true,
+    label: 'Origen',
+  },
+  amount: {
+    type: 'currency',
+    label: 'Monto',
+  },
+  notes: {
+    type: 'textarea',
+    label: 'Notas',
+  },
+};

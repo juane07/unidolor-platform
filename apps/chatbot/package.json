@@ -1,0 +1,19 @@
+{
+  "name": "@unidolor/chatbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ChatBot de WhatsApp UNIDOLOR (Cloudflare Worker)",
+  "dependencies": {
+    "@unidolor/core": "workspace:*",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test-bot.js"
+  }
+}

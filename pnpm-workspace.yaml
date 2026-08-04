@@ -1,0 +1,18 @@
+packages:
+  - "packages/*"
+  - "apps/crm/backend"
+  - "apps/crm/frontend"
+  - "apps/chatbot"
+  - "scripts"
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+minimumReleaseAgeExclude:
+  - '@puppeteer/browsers@3.1.0'
+  - puppeteer-core@25.5.0
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
