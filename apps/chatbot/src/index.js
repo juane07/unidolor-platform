@@ -5,6 +5,7 @@ import { searchPatient, createPatient, createConsultation } from './nimbo.js';
 import { sendToCRM, notifyBackoffice, sendBackofficePhoto } from './crm.js';
 import { getFormServicioValue, getFormServicioLabel, FORM_REQUISITOS } from './knowledge-data.js';
 import { sanitizeFormPayload, extractData, looksLikeAddress, looksLikeCompany, cleanName } from './extract.js';
+import { addActivePhone, getActivePhones, rebuildActivePhones } from './kv-index.js';
 
 const rateLimit = new Map();
 const RATE_WINDOW = 60_000;
@@ -760,6 +761,7 @@ async function saveFormData(env, from, summary) {
       // Also keep timestamped copy for history
       const histKey = `form:${Date.now()}:${from}`;
       await env.SEGUIMIENTO.put(histKey, JSON.stringify(data));
+      await addActivePhone(env.SEGUIMIENTO, from);
     }
   } catch {}
 }
@@ -778,6 +780,7 @@ async function updateConvName(env, phone, name) {
       } else {
         await env.SEGUIMIENTO.put(key, JSON.stringify({ phone, name, messages: [], messageCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }), { expirationTtl: 604800 });
       }
+      await addActivePhone(env.SEGUIMIENTO, phone);
     }
   } catch (err) {
     console.error('Update conv name error:', err);
@@ -877,6 +880,7 @@ async function reprocessConvNames(env) {
         console.log(`Fixed name for ${phone}: ${detectedName}`);
       }
     }
+    await rebuildActivePhones(env.SEGUIMIENTO);
     return { processed };
   } catch (err) {
     console.error('Reprocess names error:', err);
@@ -895,6 +899,7 @@ async function logMessage(env, phone, role, content) {
     entry.updatedAt = new Date().toISOString();
     if (entry.messages.length > 100) entry.messages = entry.messages.slice(-100);
     await env.SEGUIMIENTO.put(key, JSON.stringify(entry), { expirationTtl: 604800 });
+    await addActivePhone(env.SEGUIMIENTO, phone);
   } catch (err) {
     console.error('Log message error:', err);
   }
@@ -1864,92 +1869,44 @@ setInterval(loadList,30000);
   });
 }
 
-const CONV_INDEX_KEY = 'convindex:v1';
-const CONV_INDEX_TTL = 10 * 60 * 1000;
-
-function decorateMessages(msgs) {
-  return msgs.map((h) => ({
-    role: h.role === 'user' ? 'user' : 'bot',
-    content: h.content,
-    timestamp: new Date(h.ts || Date.now()).toISOString(),
-  }));
-}
-
 async function buildConversationIndex(env) {
   const kv = env.SEGUIMIENTO;
 
-  // Single passthrough of list() calls: one per prefix (no per-phone list()).
-  const [formList, convList, msgList, latestForms] = await Promise.all([
-    kv.list({ prefix: 'form:' }),
-    kv.list({ prefix: 'conv:' }),
-    kv.list({ prefix: 'msgh:' }),
-    kv.list({ prefix: 'form:latest:' }),
-  ]);
-
-  // phone -> service label
-  const phoneToService = new Map();
-  for (const key of formList.keys) {
-    const data = await kv.get(key.name, 'json');
-    if (data && data.phone && data.servicio) {
-      phoneToService.set(data.phone, getFormServicioLabel(data.servicio) || data.servicio);
-    }
+  // ZERO list() calls: los teléfonos activos se rastrean en la key
+  // active_phones:v1 (actualizada en logMessage/updateConvName/saveConvHistory).
+  let phones = await getActivePhones(kv);
+  if (!phones || phones.length === 0) {
+    // Cold start / migración: una sola pasada de list() para repoblar el índice.
+    await rebuildActivePhones(kv);
+    phones = (await getActivePhones(kv)) || [];
   }
 
-  // phone -> name (fallback from latest forms)
-  const formNameMap = new Map();
-  for (const key of latestForms.keys) {
-    const data = await kv.get(key.name, 'json');
-    if (data && data.phone && data.nombre) formNameMap.set(data.phone, data.nombre);
-  }
-
-  // Group all msgh: messages by phone from a single list (avoids N list() calls).
-  const msgsByPhone = new Map();
-  for (const key of msgList.keys) {
-    const p = key.name.slice('msgh:'.length).split(':')[0];
-    if (!msgsByPhone.has(p)) msgsByPhone.set(p, []);
-    msgsByPhone.get(p).push(key.name);
-  }
-  for (const [p, keys] of msgsByPhone) {
-    const msgs = [];
-    for (const k of keys) {
-      const v = await kv.get(k, 'json');
-      if (v && v.role) msgs.push(v);
-    }
-    msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-    msgsByPhone.set(p, msgs);
-  }
-
-  const seen = new Set();
   const conversations = [];
 
-  for (const key of convList.keys) {
-    const data = await kv.get(key.name, 'json');
+  for (const phone of phones) {
+    const [data, latestForm] = await Promise.all([
+      kv.get(`conv:${phone}`, 'json'),
+      kv.get(`form:latest:${phone}`, 'json'),
+    ]);
     if (!data) continue;
-    data.service = phoneToService.get(data.phone) || '';
-    if (!data.name && formNameMap.has(data.phone)) data.name = formNameMap.get(data.phone);
-    const msgs = msgsByPhone.get(data.phone) || [];
-    if (msgs.length > 0) {
-      data.messages = decorateMessages(msgs);
-      data.messageCount = msgs.length;
-      data.updatedAt = new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString();
-    } else if (!data.messageCount) {
-      data.messageCount = Array.isArray(data.messages) ? data.messages.length : 0;
-    }
-    conversations.push(data);
-    seen.add(data.phone);
-  }
 
-  for (const [p, msgs] of msgsByPhone) {
-    if (seen.has(p) || msgs.length === 0) continue;
-    conversations.push({
-      phone: p,
-      name: formNameMap.get(p) || '',
-      service: phoneToService.get(p) || '',
-      messages: decorateMessages(msgs),
-      messageCount: msgs.length,
-      createdAt: new Date(msgs[0].ts || Date.now()).toISOString(),
-      updatedAt: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString(),
-    });
+    data.service = data.service || (latestForm && latestForm.servicio ? (getFormServicioLabel(latestForm.servicio) || latestForm.servicio) : '');
+    if (!data.name && latestForm && latestForm.nombre) data.name = latestForm.nombre;
+
+    const msgs = Array.isArray(data.messages) ? data.messages : [];
+    if (msgs.length > 0) {
+      data.messages = msgs.map((m) => ({
+        role: m.role === 'user' ? 'user' : 'bot',
+        content: m.content,
+        timestamp: new Date(m.timestamp || Date.now()).toISOString(),
+      }));
+      data.messageCount = msgs.length;
+      data.updatedAt = new Date(msgs[msgs.length - 1].timestamp || Date.now()).toISOString();
+    } else if (!data.messageCount) {
+      data.messageCount = 0;
+    }
+
+    conversations.push(data);
   }
 
   conversations.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
@@ -1957,17 +1914,7 @@ async function buildConversationIndex(env) {
 }
 
 async function getConversationIndex(env) {
-  const kv = env.SEGUIMIENTO;
-  const cached = await kv.get(CONV_INDEX_KEY, 'json');
-  const now = Date.now();
-  if (cached && Array.isArray(cached.conversations) && cached.builtAt && now - cached.builtAt < CONV_INDEX_TTL) {
-    return cached.conversations;
-  }
-  const conversations = await buildConversationIndex(env);
-  await kv.put(CONV_INDEX_KEY, JSON.stringify({ builtAt: Date.now(), conversations }), {
-    expirationTtl: Math.ceil((CONV_INDEX_TTL + 60 * 1000) / 1000),
-  });
-  return conversations;
+  return buildConversationIndex(env);
 }
 
 function jsonResponse(body) {

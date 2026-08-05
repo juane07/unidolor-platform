@@ -1,3 +1,5 @@
+import { addActivePhone } from './kv-index.js';
+
 const conversations = new Map();
 const CONV_TIMEOUT = 30 * 60 * 1000;
 const IMAGES_TIMEOUT = 10 * 60 * 1000;
@@ -179,8 +181,7 @@ export function getExtraction(from) {
 export async function loadConvHistory(from, kv) {
   if (!kv) return;
   try {
-    const [listResult, modelData, stateData, convData] = await Promise.all([
-      kv.list({ prefix: `msgh:${from}:` }),
+    const [modelData, stateData, convData] = await Promise.all([
       kv.get('state:model', 'json'),
       kv.get(`state:conv:${from}`, 'json'),
       kv.get(`conv:${from}`, 'json'),
@@ -194,6 +195,8 @@ export async function loadConvHistory(from, kv) {
       persisted = entries.length;
       console.log('loadConvHistory: using conv: key, entries:', entries.length);
     } else {
+      // Fallback: solo si no hay historial en conv: se listan las keys msgh:.
+      const listResult = await kv.list({ prefix: `msgh:${from}:` });
       let listKeys = listResult.keys;
       if (listKeys.length > 0 && !finalState) {
         for (let i = 0; i < 3; i++) {
@@ -267,6 +270,7 @@ export async function saveConvHistory(from, kv) {
       createdAt: new Date(conv.startedAt).toISOString(),
       updatedAt: new Date().toISOString(),
     }), { expirationTtl: 604800 });
+    await addActivePhone(kv, from);
   } catch (err) {
     console.error('KV save error:', err);
   }
