@@ -55,8 +55,17 @@ export function addReceivedImage(from, tipo, imageData) {
   const state = getConvState(from);
   if (!state.receivedImages) state.receivedImages = {};
   state.receivedImages[tipo] = imageData;
+  if (tipo === 'ambos') {
+    if (!state.receivedImages.cedula) state.receivedImages.cedula = imageData;
+    if (!state.receivedImages.seguro) state.receivedImages.seguro = imageData;
+  }
   if (state.awaitingImages) {
-    state.awaitingImages[tipo] = false;
+    if (tipo === 'ambos') {
+      state.awaitingImages.cedula = false;
+      state.awaitingImages.seguro = false;
+    } else {
+      state.awaitingImages[tipo] = false;
+    }
   }
   if (!state.awaitingImages?.cedula && !state.awaitingImages?.seguro) {
     state.imagesTimeoutAt = null;
@@ -76,6 +85,23 @@ export function clearImagesState(from) {
   const state = getConvState(from);
   state.awaitingImages = null;
   state.imagesTimeoutAt = null;
+}
+
+export function setAwaitingAfiliado(from, awaiting) {
+  const state = getConvState(from);
+  state.awaitingAfiliado = awaiting;
+  state.afiliadoTimeoutAt = Date.now() + IMAGES_TIMEOUT;
+}
+
+export function getAwaitingAfiliado(from) {
+  const state = getConvState(from);
+  return state.awaitingAfiliado || null;
+}
+
+export function clearAwaitingAfiliado(from) {
+  const state = getConvState(from);
+  state.awaitingAfiliado = null;
+  state.afiliadoTimeoutAt = null;
 }
 
 export function hasImagesTimeoutExpired(from) {
@@ -141,6 +167,15 @@ export function clearRescheduleDate(from) {
   state.awaitingRescheduleDate = null;
 }
 
+export function setExtraction(from, extraction) {
+  const state = getConvState(from);
+  state.extraction = { ...(state.extraction || {}), ...extraction };
+}
+
+export function getExtraction(from) {
+  return getConvState(from).extraction || null;
+}
+
 export async function loadConvHistory(from, kv) {
   if (!kv) return;
   try {
@@ -187,6 +222,9 @@ export async function loadConvHistory(from, kv) {
       appointmentTimeoutAt: finalState?.appointmentTimeoutAt || null,
       awaitingCancelConfirmation: finalState?.awaitingCancelConfirmation || null,
       awaitingRescheduleDate: finalState?.awaitingRescheduleDate || null,
+      awaitingAfiliado: finalState?.awaitingAfiliado || null,
+      afiliadoTimeoutAt: finalState?.afiliadoTimeoutAt || null,
+      extraction: finalState?.extraction || null,
     });
     if (modelData) Object.assign(modelState, modelData);
   } catch (err) {
@@ -218,6 +256,9 @@ export async function saveConvHistory(from, kv) {
       appointmentTimeoutAt: conv.appointmentTimeoutAt,
       awaitingCancelConfirmation: conv.awaitingCancelConfirmation,
       awaitingRescheduleDate: conv.awaitingRescheduleDate,
+      awaitingAfiliado: conv.awaitingAfiliado || null,
+      afiliadoTimeoutAt: conv.afiliadoTimeoutAt || null,
+      extraction: conv.extraction || null,
     };
     await kv.put(`state:conv:${from}`, JSON.stringify(statePayload), { expirationTtl: 86400 });
     await kv.put(`conv:${from}`, JSON.stringify({

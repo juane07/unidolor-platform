@@ -2,6 +2,13 @@
 
 Fuente oficial de conocimiento institucional. Originada en `Unidolor - Cerebro` y migrada al monorepo.
 
+## Estructura
+
+| Carpeta | Contenido |
+|---|---|
+| `./` (raíz) | Documentación institucional (11 docs originados en `Unidolor - Cerebro`) |
+| `chatbot/` | Conocimiento operativo del WhatsApp Bot (config, manual, formularios) |
+
 ## Documentos
 
 | Documento | Contenido |
@@ -17,6 +24,18 @@ Fuente oficial de conocimiento institucional. Originada en `Unidolor - Cerebro` 
 | `09_FAQ.md` | Preguntas frecuentes oficiales (base empírica) |
 | `10_ROADMAP.md` | Planificación estratégica y proyectos |
 | `11_PATRONES_CHATS.md` | Patrones de conversación extraídos de WhatsApp real |
+
+## Conocimiento del chatbot
+
+| Documento | Contenido |
+|---|---|
+| `chatbot/chatbot-config.md` | Keywords, detección de intención, urgencias, pipeline del bot |
+| `chatbot/conocimiento-unidolor.md` | Documento único con servicios, FAQ, horarios, políticas, ubicaciones |
+| `chatbot/manual-institucional-whatsapp.md` | Manual de políticas, formularios y respuestas institucionales |
+| `chatbot/unidolor-master.md` | Documento maestro consolidado (referencia histórica) |
+| `chatbot/formularios.json` | Estructura de formularios del bot |
+
+Originado en `Unidolor - ChatBot/knowledge/` y migrado al monorepo.
 
 ## Relación con el chatbot
 

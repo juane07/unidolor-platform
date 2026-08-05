@@ -1,11 +1,13 @@
-import { cleanup, loadConvHistory, saveConvHistory, getHistory, addToHistory, getConvState, setFormData, getFormData, setAwaitingImages, addReceivedImage, checkStillAwaiting, clearImagesState, setAwaitingAppointment, addAppointmentSlot, checkAwaitingAppointment, clearAppointmentState, setAwaitingCancelConfirmation, getAwaitingCancelConfirmation, clearCancelConfirmation, setAwaitingRescheduleDate, getAwaitingRescheduleDate, clearRescheduleDate } from './state.js';
+import { cleanup, loadConvHistory, saveConvHistory, getHistory, addToHistory, getConvState, setFormData, getFormData, setAwaitingImages, addReceivedImage, clearImagesState, setAwaitingAppointment, addAppointmentSlot, checkAwaitingAppointment, clearAppointmentState, setAwaitingCancelConfirmation, getAwaitingCancelConfirmation, clearCancelConfirmation, setAwaitingRescheduleDate, getAwaitingRescheduleDate, clearRescheduleDate, setExtraction, getExtraction, setAwaitingAfiliado, clearAwaitingAfiliado } from './state.js';
 import { detectUrgency, detectarIntencion } from './intent.js';
 import { getUrgentResponse, SITE_URL } from './knowledge.js';
 import { buildPrompt, buildReply, getPromptText } from './prompt.js';
 import { callGemini, getCachedReply, setCachedReply } from './ai.js';
 import { getSectionForIntent, findService, getFormLink, detectFields } from './knowledge-data.js';
+import { missingPhotos, missingNumbers, buildRequirementsMessage } from './requirements.js';
 import { mergeExtractedData, inferDocumentType } from './images.js';
-import { checkAvailability, createAppointment, sendToCRM, getAppointmentsByClient, cancelAppointment, rescheduleAppointment } from './crm.js';
+import { checkAvailability, createAppointment, sendToCRM, getAppointmentsByClient, cancelAppointment, rescheduleAppointment, createOrUpdateClient, notifyBackoffice } from './crm.js';
+import { extractData } from './extract.js';
 
 function getRDHour() {
   const now = new Date();
@@ -337,6 +339,31 @@ export function createBot(env) {
 
           if (appointment.success) {
             clearAppointmentState(from);
+
+            // Consolidar toda la data del paciente y notificar al back-office (cliente + cita)
+            let allData = {
+              ...formData,
+              nombre: formData.nombre || formData.patient_name || '',
+              telefono: formData.telefono || (formData.patient_phone || '') || from,
+              cedula: formData.cedula || '',
+              servicio: formData.servicio || '',
+              servicioLabel: formData.servicioLabel || '',
+              seguro: formData.seguro || '',
+            };
+            try {
+              await notifyBackoffice(env, allData, crmData, {
+                success: true,
+                date: selectedSlot.date,
+                startTime: selectedSlot.start,
+                endTime: selectedSlot.end,
+                doctorName: selectedSlot.doctor?.name || '',
+                branchName: selectedSlot.branch?.name || '',
+                appointmentId: appointment.appointmentId || appointment.id || appointment._id || '',
+              });
+            } catch (e) {
+              console.error('Backoffice notify error after appointment:', e.message);
+            }
+
             const msg = `✅ Cita confirmada:\n📅 ${selectedSlot.date}\n⏰ ${selectedSlot.start} - ${selectedSlot.end}\n👨‍⚕️ ${selectedSlot.doctor.name}\n🏥 ${selectedSlot.branch.name}\n\nUn recordatorio se enviará antes de su cita.`;
 
             addToHistory(from, 'user', text);
@@ -778,6 +805,64 @@ export function createBot(env) {
       }
     }
 
+    // ── Extracción de datos estructurados con IA (extract.js) ──
+    // Se ejecuta en paralelo con la respuesta normal: si los datos están completos,
+    // se crea/actualiza el cliente en CRM y se notifica al back-office.
+    try {
+      const currentExtraction = getExtraction(from) || {};
+      const userTextsForExtract = [...history.filter(h => h.role === 'user').map(h => h.content), text];
+      const extractionResult = await extractData(env, userTextsForExtract, currentExtraction);
+
+      if (extractionResult && extractionResult.extraction) {
+        // Guardar extracción en estado (persistida vía saveConvHistory)
+        const extraction = extractionResult.extraction;
+        const nombre = extraction.nombre || extraction.patient_name || extraction.caller_name || '';
+        const telefono = extraction.telefono || extraction.patient_phone || extraction.caller_phone || '';
+        if (nombre) setExtraction(from, { ...extraction, nombre });
+        if (nombre && telefono) {
+          // Fusionar con formData para compatibilidad con flujo existente
+          setFormData(from, { ...getFormData(from), ...extraction, nombre, telefono });
+          updateConvNameSafe(from, nombre);
+        }
+
+        // Exportar solo si la extracción está completa y aún no escalamos
+        const shouldExport = extractionResult.action === 'export' && !result.requiresEscalation;
+        if (shouldExport && nombre && telefono) {
+          result.requiresEscalation = true;
+          result.type = 'extraction_export';
+          result.summary = JSON.stringify({ ...extraction, nombre, telefono });
+          if (kv) {
+            try {
+              const key = `form:latest:${from}`;
+              const payload = { phone: from, created: new Date().toISOString(), ...extraction, nombre, telefono };
+              await kv.put(key, JSON.stringify(payload));
+              const histKey = `form:${Date.now()}:${from}`;
+              await kv.put(histKey, JSON.stringify(payload));
+            } catch (e) { console.error('KV save error (extraction):', e); }
+          }
+          // Crear/actualizar cliente en CRM
+          try {
+            const crmResult = await createOrUpdateClient(env, { ...extraction, nombre, telefono });
+            if (crmResult.ok && crmResult.contactId) {
+              setFormData(from, { contactId: crmResult.contactId, opportunityId: crmResult.opportunityId });
+              setExtraction(from, { contactId: crmResult.contactId, opportunityId: crmResult.opportunityId });
+              result.crmContactId = crmResult.contactId;
+              // Notificar al back-office
+              await notifyBackoffice(env, { ...extraction, nombre, telefono }, crmResult, null);
+            } else {
+              console.error('CRM client creation failed (extraction):', crmResult?.error);
+              await notifyBackoffice(env, { ...extraction, nombre, telefono }, null, { success: false, error: crmResult?.error || 'CRM error' });
+            }
+          } catch (err) {
+            console.error('CRM client creation error (extraction):', err.message);
+            await notifyBackoffice(env, { ...extraction, nombre, telefono }, null, { success: false, error: err.message });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Extraction flow error:', err.message);
+    }
+
     // Lógica proactiva de fotos: si hay datos suficientes pero faltan imágenes
     const formData = getFormData(from);
     const mergedFormData = { ...formData, ...fields };
@@ -787,43 +872,85 @@ export function createBot(env) {
       setFormData(from, mergedFormData);
     }
 
-    // Si ya tenemos datos para formulario y no hemos pedido fotos
-    if (enoughForForm(mergedFormData) && !state.awaitingImages && !state.receivedImages?.cedula) {
-      const needsCedula = !mergedFormData.cedula;
-      const needsSeguro = mergedFormData.seguro && !mergedFormData.afiliado;
-      
-      if (needsCedula || needsSeguro) {
-        setAwaitingImages(from, { cedula: needsCedula, seguro: needsSeguro });
-        let msg = 'Perfecto, ya tengo sus datos. Por favor envíe foto de su cédula';
-        if (needsSeguro) msg += ' y carnet de seguro';
-        msg += '.';
-        
+    // ── REQUISITOS UNIFICADOS (fotos de cédula y seguro SIEMPRE obligatorias + números) ──
+    const faltanFotos = missingPhotos(state.receivedImages);
+    const faltanNumeros = missingNumbers(mergedFormData);
+
+    // Mientras estemos esperando un número por texto, capturarlo y proseguir a las fotos
+    if (state.awaitingAfiliado) {
+      let numCapturado = mergedFormData.afiliado || fields.afiliado || null;
+      if (!numCapturado) {
+        const bare = text.trim().match(/^[\d.\- ]{4,20}$/);
+        if (bare) numCapturado = bare[0].replace(/\s+/g, '').trim();
+        else {
+          const parcial = text.match(/(?:es|es el|numero(?: de afiliado)?\s*:?)\s*([\d.\- ]{4,20})/i);
+          if (parcial) numCapturado = parcial[1].replace(/\s+/g, '').trim();
+        }
+      }
+      if (numCapturado) {
+        clearAwaitingAfiliado(from);
+        const update = { seguro: mergedFormData.seguro || getFormData(from).seguro || '' };
+        if (fields.afiliado || faltanNumeros.includes('afiliado')) update.afiliado = numCapturado;
+        if (faltanNumeros.includes('cedula') && !fields.cedula) update.cedula = numCapturado;
+        setFormData(from, update);
+        const msg = '✅ Número registrado. Falta enviar las fotos requeridas.';
+        if (faltanFotos.length) {
+          setAwaitingImages(from, { cedula: faltanFotos.includes('cedula'), seguro: faltanFotos.includes('seguro') });
+          addToHistory(from, 'user', text);
+          addToHistory(from, 'assistant', buildRequirementsMessage({ ...mergedFormData, ...update }, state.receivedImages));
+          if (!isTest) await setCachedReply(text, buildRequirementsMessage({ ...mergedFormData, ...update }, state.receivedImages), kv);
+          await saveConvHistory(from, kv);
+          return { reply: buildRequirementsMessage({ ...mergedFormData, ...update }, state.receivedImages), type: 'awaiting_images' };
+        }
+        // Fotos completas y número registrado → formulario completo
+        const completo = { ...mergedFormData, ...update };
+        const formCompleto = completo.nombre && completo.direccion && (completo.servicio || completo.cedula || completo.telefono || completo.seguro);
+        if (formCompleto) {
+          const msg = '✅ ¡Listo! Recibimos toda la información. Un asesor se comunicará pronto.';
+          addToHistory(from, 'user', text);
+          addToHistory(from, 'assistant', msg);
+          if (!isTest) await setCachedReply(text, msg, kv);
+          await saveConvHistory(from, kv);
+          return { reply: msg, type: 'form_complete', requiresEscalation: true, summary: JSON.stringify({ formData: completo, images: state.receivedImages }) };
+        }
         addToHistory(from, 'user', text);
         addToHistory(from, 'assistant', msg);
         if (!isTest) await setCachedReply(text, msg, kv);
         await saveConvHistory(from, kv);
-        return { reply: msg, type: 'awaiting_images' };
+        return { reply: msg, type: 'afiliado_collected' };
       }
+      const msg = 'No pude identificar el número. Por favor escríbalo (ej. 001-223344-5) o envíe la foto del documento.';
+      addToHistory(from, 'user', text);
+      addToHistory(from, 'assistant', msg);
+      if (!isTest) await setCachedReply(text, msg, kv);
+      await saveConvHistory(from, kv);
+      return { reply: msg, type: 'awaiting_afiliado' };
     }
 
-    // Si el usuario proporcionó cédula/seguro por texto, reducir awaitingImages
+    // Si ya tenemos datos base para el formulario, pedir SIEMPRE las fotos faltantes y números
+    if (enoughForForm(mergedFormData) && !state.awaitingImages && (faltanFotos.length || faltanNumeros.length)) {
+      setAwaitingImages(from, { cedula: faltanFotos.includes('cedula'), seguro: faltanFotos.includes('seguro') });
+      if (faltanNumeros.length) setAwaitingAfiliado(from, true);
+      const msg = 'Perfecto, ya tengo sus datos. ' + buildRequirementsMessage({ ...mergedFormData, cedula: mergedFormData.cedula, afiliado: mergedFormData.afiliado }, state.receivedImages);
+      addToHistory(from, 'user', text);
+      addToHistory(from, 'assistant', msg);
+      if (!isTest) await setCachedReply(text, msg, kv);
+      await saveConvHistory(from, kv);
+      return { reply: msg, type: faltanFotos.length ? 'awaiting_images' : 'awaiting_afiliado' };
+    }
+
+    // Si el usuario escribió un número faltante mientras esperamos fotos, capturarlo
     if (state.awaitingImages) {
-      if (mergedFormData.cedula && state.awaitingImages.cedula) {
-        addReceivedImage(from, 'cedula', { key: 'texto', extracted: { cedula: mergedFormData.cedula }, receivedAt: Date.now() });
-      }
-      if (mergedFormData.seguro && state.awaitingImages.seguro) {
-        addReceivedImage(from, 'seguro', { key: 'texto', extracted: { seguro: mergedFormData.seguro, afiliado: mergedFormData.afiliado }, receivedAt: Date.now() });
-      }
-      
-      const stillAwaiting = checkStillAwaiting(from);
-      if (!stillAwaiting.cedula && !stillAwaiting.seguro) {
+      const update = {};
+      if (mergedFormData.cedula && faltanNumeros.includes('cedula')) update.cedula = mergedFormData.cedula;
+      if (mergedFormData.afiliado && faltanNumeros.includes('afiliado')) update.afiliado = mergedFormData.afiliado;
+      if (Object.keys(update).length) setFormData(from, update);
+      // Las fotos de cédula y seguro son OBLIGATORIAS: el texto no las sustituye
+      const recalcMissing = missingPhotos(state.receivedImages);
+      if (recalcMissing.length === 0) {
         clearImagesState(from);
-        // Continuar al flujo normal de form_complete
       } else {
-        let msg = 'Recibido. ';
-        if (stillAwaiting.cedula) msg += 'Falta cédula. ';
-        if (stillAwaiting.seguro) msg += 'Falta carnet de seguro. ';
-        
+        let msg = 'Recibido. \u2022 Falta enviar: ' + recalcMissing.map(m => (m === 'cedula' ? '📷 foto de su cédula' : '📷 foto del carnet de seguro')).join(' y ') + '.';
         addToHistory(from, 'user', text);
         addToHistory(from, 'assistant', msg);
         if (!isTest) await setCachedReply(text, msg, kv);
@@ -877,12 +1004,18 @@ export function createBot(env) {
       const merged = mergeData(formData, extracted, tipo);
       setFormData(from, merged);
       
-      // Verificar si ya tenemos todo
-      const stillAwaiting = checkStillAwaiting(from);
+      // Verificar si ya tenemos todo (fotos OBLIGATORIAS de ambos + números)
+      const faltanFotosImg = missingPhotos(state.receivedImages);
+      const faltanNumerosImg = missingNumbers(merged);
       let reply;
-      if (!stillAwaiting.cedula && !stillAwaiting.seguro) {
+      if (faltanFotosImg.length === 0) {
         clearImagesState(from);
         const enoughForForm = (f) => f.nombre && f.direccion && (f.servicio || f.cedula || f.telefono || f.seguro);
+        if (faltanNumerosImg.length) {
+          setAwaitingAfiliado(from, true);
+          reply = '✅ Fotos recibidas. ' + buildRequirementsMessage(merged, state.receivedImages);
+          return { reply, type: 'awaiting_afiliado' };
+        }
         if (enoughForForm(merged)) {
           reply = '¡Gracias! Recibimos sus documentos. Un asesor se comunicará pronto.';
           return { 
@@ -895,9 +1028,7 @@ export function createBot(env) {
         reply = 'Recibido. Faltan algunos datos. ¿Puede proporcionarnos su dirección y el servicio que necesita?';
         return { reply, type: 'awaiting_data' };
       } else {
-        let msg = 'Recibido. ';
-        if (stillAwaiting.cedula) msg += 'Falta cédula. ';
-        if (stillAwaiting.seguro) msg += 'Falta carnet de seguro. ';
+        let msg = 'Recibido. \u2022 Falta enviar: ' + faltanFotosImg.map(m => (m === 'cedula' ? '📷 foto de su cédula' : '📷 foto del carnet de seguro')).join(' y ') + '.';
         reply = msg;
         return { reply, type: 'awaiting_images' };
       }
@@ -980,4 +1111,13 @@ function extractNameFromText(text) {
     }
   }
   return null;
+}
+
+async function updateConvNameSafe(from, nombre) {
+  if (!nombre) return;
+  const clean = String(nombre).trim();
+  if (!clean || clean === '(solicitado)' || /^\d/.test(clean) || clean.length < 3) return;
+  // No hacer nada aquí directamente; la persistencia del nombre de conversación
+  // la maneja index.js via updateConvName. Este helper solo valida.
+  return clean;
 }

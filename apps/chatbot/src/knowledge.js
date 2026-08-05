@@ -1,8 +1,4 @@
-import { institutionalConfig } from '@unidolor/core';
-
-const { institucion } = institutionalConfig;
-
-export const PHONE = `${institucion.telefono} | ${institucion.whatsapp}`;
+export const PHONE = '809-636-3656 | 829-263-4143';
 // Dominio del formulario. El sufijo ya NO es la cuenta personal:
 // requiere cambiar el subdomain workers.dev a "unidolor" en el dashboard de Cloudflare:
 //   Workers & Pages → "Your subdomain" → Change → unidolor

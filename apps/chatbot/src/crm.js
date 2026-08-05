@@ -121,4 +121,215 @@ export async function rescheduleAppointment(env, appointmentId, data) {
   });
 }
 
+export async function createOrUpdateClient(env, extraction) {
+  const data = extraction || {};
+  const nombre = data.nombre || data.patient_name || data.caller_name || '';
+  const telefono = data.telefono || data.patient_phone || data.caller_phone || '';
+  const primerNombre = nombre.split(' ')[0] || '';
+  const apellido = nombre.split(' ').slice(1).join(' ') || '';
+
+  if (!nombre || !telefono) {
+    return { ok: false, error: 'Faltan nombre o teléfono para crear cliente' };
+  }
+
+  const result = await sendToCRM(env, {
+    nombre,
+    first_name: primerNombre,
+    last_name: apellido,
+    telefono,
+    cedula: data.cedula || '',
+    direccion: data.direccion || '',
+    servicio: data.servicio || '',
+    seguro: data.seguro || '',
+    afiliado: data.afiliado || '',
+    email: data.email || '',
+    fecha_nacimiento: data.fecha_nacimiento || '',
+    genero: data.genero || '',
+    sucursal: data.sucursal || '',
+    notas: data.notas || '',
+    requisitos: data.requisitos || {},
+    caller_phone: data.caller_phone || '',
+    caller_name: data.caller_name || '',
+    relationship: data.relationship || 'mismo',
+    patient_name: data.patient_name || '',
+    patient_phone: data.patient_phone || '',
+    source_channel: 'whatsapp',
+    fuente: 'whatsapp',
+  });
+
+  return result;
+}
+
+// Resumen unificado: datos del paciente + servicio/cita agendado.
+// forUser=true → formato de confirmación para el paciente.
+// forUser=false → formato para verificación humana (back-office), con headers técnicos.
+export function buildServiceSummary(extraction, appointmentResult, opts = {}) {
+  const { forUser = true, crmResult = null } = opts;
+  const d = extraction || {};
+  const servicio = d.servicioLabel || d.servicio || '';
+  const nombre = d.nombre || d.patient_name || d.caller_name || '';
+  const telefono = d.telefono || d.patient_phone || d.caller_phone || '';
+  const direccion = d.direccion || '';
+  const seguro = d.seguro || '';
+  const cedula = d.cedula || '';
+  const afiliado = d.afiliado || '';
+  const email = d.email || '';
+  const fecha_nacimiento = d.fecha_nacimiento || '';
+  const genero = d.genero || '';
+  const sucursal = d.sucursal || '';
+  const notas = d.notas || '';
+  const relationship = d.relationship || '';
+  const caller = d.caller_name || '';
+  const motivo = d.motivo || '';
+  const requisitos = typeof d.requisitos === 'object' && d.requisitos ? Object.entries(d.requisitos).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
+
+  const pacNombre = d.patient_name || d.nombre || d.caller_name || '';
+  const esParaOtro = d.patient_name && d.patient_name !== d.nombre && d.nombre && d.patient_name !== d.nombre;
+
+  let msg;
+  if (forUser) {
+    msg = `✅ ¡Listo ${nombre.split(' ')[0] || ''}! Registramos su solicitud:\n\n👤 Paciente: ${pacNombre}`;
+  } else {
+    msg = `══════ 🟢 CLIENTE / CITA ══════\n👤 Paciente: ${pacNombre}`;
+  }
+
+  if (!forUser) {
+    if (caller && caller !== pacNombre) {
+      msg += `\n📞 Quién agenda: ${caller}`;
+    } else if (relationship && relationship !== 'mismo') {
+      msg += `\n📞 Quién agenda: ${relationship} (desde el chat, sin nombre)`;
+    }
+  }
+  msg += `\n📱 Teléfono: ${telefono}\n🩺 Servicio: ${servicio}`;
+  if (motivo) msg += `\n📝 Motivo: ${motivo}`;
+  if (direccion) msg += `\n🏠 Dirección: ${direccion}`;
+  if (cedula) msg += `\n🪪 Cédula: ${cedula}`;
+  if (seguro) msg += `\n🏥 Seguro: ${seguro}`;
+  if (afiliado) msg += `\n📇 Afiliado: ${afiliado}`;
+  if (email) msg += `\n📧 Email: ${email}`;
+  if (fecha_nacimiento) msg += `\n🎂 F. nacimiento: ${fecha_nacimiento}`;
+  if (genero) msg += `\n⚧ Género: ${genero}`;
+  if (sucursal) msg += `\n🏢 Sucursal: ${sucursal}`;
+  if (requisitos) msg += `\n📄 Requisitos: ${requisitos}`;
+  if (notas) msg += `\n🗒️ Notas: ${notas}`;
+  if (!forUser && crmResult && crmResult.contactId) msg += `\n🆔 CRM Contact: ${crmResult.contactId}`;
+
+  if (appointmentResult && appointmentResult.success) {
+    msg += `\n\n✅ SERVICIO AGENDADO:\n📅 Fecha: ${appointmentResult.date}\n⏰ Hora: ${appointmentResult.startTime}-${appointmentResult.endTime}\n👨‍⚕️ Doctor: ${appointmentResult.doctorName || appointmentResult.doctor || ''}\n🏥 Sucursal: ${appointmentResult.branchName || appointmentResult.branch || ''}`;
+    if (appointmentResult.appointmentId) msg += `\n🆔 Cita ID: ${appointmentResult.appointmentId}`;
+  } else if (appointmentResult && appointmentResult.error) {
+    msg += `\n\n⚠️ No se pudo agendar: ${appointmentResult.error}`;
+  }
+
+  if (forUser) {
+    msg += `\n\nUn asesor humano verificará su solicitud.`;
+  } else {
+    msg += `\n─────────────────────────\nUNIDOLOR`;
+  }
+  return msg;
+}
+
+export async function notifyBackoffice(env, extraction, crmResult, appointmentResult) {
+  if (!env.BACKOFFICE_PHONE) {
+    console.log('BACKOFFICE_PHONE not configured, skipping back-office notification');
+    return { ok: false, error: 'BACKOFFICE_PHONE no configurado' };
+  }
+  if (!env.META_ACCESS_TOKEN || !env.META_PHONE_NUMBER_ID) {
+    console.log('WhatsApp not configured, skipping back-office notification');
+    return { ok: false, error: 'WhatsApp no configurado' };
+  }
+
+  const msg = buildServiceSummary(extraction, appointmentResult, {
+    forUser: false,
+    crmResult,
+  });
+
+  const url = `https://graph.facebook.com/v22.0/${env.META_PHONE_NUMBER_ID}/messages`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.META_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: env.BACKOFFICE_PHONE,
+        type: 'text',
+        text: { preview_url: false, body: msg },
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('Back-office notification error:', res.status, err);
+      return { ok: false, error: `WhatsApp ${res.status}: ${err}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('Back-office notification error:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 export { sendToCRM };
+
+export async function sendBackofficePhoto(env, base64, caption) {
+  if (!env.BACKOFFICE_PHONE || !env.META_ACCESS_TOKEN || !env.META_PHONE_NUMBER_ID) {
+    console.log('Backoffice WhatsApp no configurado, saltando foto');
+    return { ok: false, error: 'WhatsApp backoffice no configurado' };
+  }
+  if (!base64) return { ok: false, error: 'Sin base64' };
+  try {
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const mimeType = bytes[0] === 0xFF && bytes[1] === 0xD8 ? 'image/jpeg'
+      : bytes[0] === 0x89 && bytes[1] === 0x50 ? 'image/png'
+      : bytes[0] === 0x52 && bytes[1] === 0x49 ? 'image/webp'
+      : 'image/jpeg';
+    const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : mimeType.split('/')[1];
+
+    const uploadUrl = `https://graph.facebook.com/v22.0/${env.META_PHONE_NUMBER_ID}/media`;
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', mimeType);
+    form.append('file', new Blob([bytes], { type: mimeType }), `doc.${ext}`);
+    const up = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${env.META_ACCESS_TOKEN}` },
+      body: form,
+    });
+    if (!up.ok) {
+      const err = await up.text();
+      console.error('Media upload error:', up.status, err);
+      return { ok: false, error: `Upload ${up.status}: ${err}` };
+    }
+    const upData = await up.json();
+    const mediaId = upData.id;
+    if (!mediaId) return { ok: false, error: 'Sin media id' };
+
+    const msgUrl = `https://graph.facebook.com/v22.0/${env.META_PHONE_NUMBER_ID}/messages`;
+    const res = await fetch(msgUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.META_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: env.BACKOFFICE_PHONE,
+        type: 'image',
+        image: { id: mediaId, caption: caption || '' },
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('Backoffice photo send error:', res.status, err);
+      return { ok: false, error: `Send ${res.status}: ${err}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('Backoffice photo error:', err.message);
+    return { ok: false, error: err.message };
+  }
+}

@@ -2,8 +2,9 @@ import { createBot } from './bot.js';
 import { getPromptText, setPromptText, DEFAULT_PROMPT } from './prompt.js';
 import { PHONE, SITE_URL } from './knowledge.js';
 import { searchPatient, createPatient, createConsultation } from './nimbo.js';
-import { sendToCRM } from './crm.js';
+import { sendToCRM, notifyBackoffice, sendBackofficePhoto } from './crm.js';
 import { getFormServicioValue, getFormServicioLabel, FORM_REQUISITOS } from './knowledge-data.js';
+import { sanitizeFormPayload, extractData, looksLikeAddress, looksLikeCompany, cleanName } from './extract.js';
 
 const rateLimit = new Map();
 const RATE_WINDOW = 60_000;
@@ -95,6 +96,18 @@ export default {
       if (url.pathname === '/api/forms') {
         return serveFormsAPI(env);
       }
+      if (url.pathname === '/api/extractions') {
+        if (!checkAdminKey(url, env)) return denyAdmin();
+        return serveExtractionsAPI(env, url);
+      }
+      if (url.pathname === '/api/reprocess-forms') {
+        if (!checkAdminKey(url, env)) return denyAdmin();
+        return reprocessForms(env, url);
+      }
+      if (url.pathname === '/api/data-quality') {
+        if (!checkAdminKey(url, env)) return denyAdmin();
+        return serveDataQuality(env, url);
+      }
       if (url.pathname === '/api/send-forms-to-phone') {
         if (!checkAdminKey(url, env)) return denyAdmin();
         return sendFormsToPhone(env, url);
@@ -111,14 +124,6 @@ export default {
       if (url.pathname === '/api/fix-conversation-names') {
         if (!checkAdminKey(url, env)) return denyAdmin();
         return fixConversationNames(env);
-      }
-      if (url.pathname === '/api/fix-encoding') {
-        if (!checkAdminKey(url, env)) return denyAdmin();
-        return fixEncoding(env);
-      }
-      if (url.pathname === '/api/cleanup-keys') {
-        if (!checkAdminKey(url, env)) return denyAdmin();
-        return cleanupKeys(env);
       }
       if (url.searchParams.has('hub.mode')) {
         return handleWebhookVerification(request, env);
@@ -353,6 +358,7 @@ function serveDebug(env) {
     `META_WEBHOOK_TOKEN: ${env.META_WEBHOOK_TOKEN ? '✅ configurado' : '❌ no configurado'}`,
     `GEMINI_API_KEY: ${env.GEMINI_API_KEY ? '✅ configurado' : '❌ no configurado'}`,
     `ESCALATION_PHONE_NUMBER: ${!env.ESCALATION_PHONE_NUMBER || env.ESCALATION_PHONE_NUMBER === '8095550100' ? '❌ deshabilitado' : '✅ configurado'}`,
+    `BACKOFFICE_PHONE: ${!env.BACKOFFICE_PHONE ? '❌ no configurado' : '✅ configurado (' + env.BACKOFFICE_PHONE + ')'}`,
     `SEGUIMIENTO KV: ${env.SEGUIMIENTO ? '✅ configurado' : '❌ no configurado'}`,
     `TEST_MODE: ${env.TEST_MODE ? '✅ ACTIVADO (sin Gemini)' : '❌ desactivado (usa Gemini)'}`,
     `Prompt: ${env.SEGUIMIENTO ? '✅ editable en /prompt' : '❌ no editable (sin KV)'}`,
@@ -583,6 +589,9 @@ async function handleIncomingMessage(request, env) {
               if (!crmResult.ok) {
                 console.error('CRM sync failed in text msg escalation:', crmResult.error);
               }
+              try {
+                await notifyBackoffice(env, { ...formData, telefono: formData.telefono || from }, crmResult.ok ? crmResult : null, null);
+              } catch (e) { console.error('Backoffice notify error (text):', e.message); }
             }
           } catch {}
         }
@@ -623,6 +632,9 @@ async function handleIncomingMessage(request, env) {
                 if (!crmResult.ok) {
                   console.error('CRM sync failed in image msg escalation:', crmResult.error);
                 }
+                try {
+                  await notifyBackoffice(env, { ...formData, telefono: formData.telefono || from }, crmResult.ok ? crmResult : null, null);
+                } catch (e) { console.error('Backoffice notify error (image):', e.message); }
               }
             } catch {}
           }
@@ -772,69 +784,97 @@ async function updateConvName(env, phone, name) {
   }
 }
 
+async function extractNameWithAI(env, messages) {
+  if (!messages || messages.length === 0) return null;
+  
+  const userMessages = messages
+    .filter(m => m.role === 'user' && m.content)
+    .map(m => m.content)
+    .slice(-10);
+  
+  if (userMessages.length === 0) return null;
+  
+  const conversationText = userMessages.join('\n---\n');
+  
+  const prompt = `Extrae el NOMBRE DEL PACIENTE O FAMILIAR de esta conversación de WhatsApp con UNIDOLOR.
+
+Conversación (solo mensajes del usuario):
+${conversationText}
+
+REGLAS ESTRICTAS:
+1. Busca SOLO nombres de PERSONAS (paciente, familiar, quien habla)
+2. Patrones válidos: "Es para mi esposa que se llama X", "Soy X", "Mi nombre es X", "Me llamo X", "Le habla la Sra X", "Mi paciente es X"
+3. IGNORA COMPLETAMENTE: direcciones (calle, avenida, torre, edificio, apt, sector, ensanche), teléfonos, cédulas, seguros, bancos, empresas
+4. Si el usuario da datos de dirección/teléfono/seguro DESPUÉS de dar el nombre → el nombre ya se dio antes
+5. Si NO hay nombre de persona claro en toda la conversación → devuelve "null"
+
+Responde SOLO con el nombre completo de la persona (paciente o familiar) o "null".`;
+
+  try {
+    let name = null;
+    if (env.GEMINI_API_KEY) {
+      const { callGemini } = await import('./ai.js');
+      name = await callGemini(env.GEMINI_API_KEY, prompt, env.SEGUIMIENTO, env.GROQ_API_KEY);
+    } else if (env.GROQ_API_KEY) {
+      const { callGroq } = await import('./ai.js');
+      name = await callGroq(env.GROQ_API_KEY, prompt);
+    }
+    
+    if (!name || name.trim().toLowerCase() === 'null') return null;
+    
+    const cleaned = name.trim().replace(/^["']|["']$/g, '');
+    if (cleaned.length < 3 || cleaned.length > 60) return null;
+    
+    const looksLikeAddress = /\b(calle|avenida|av\.|torre|torres|edificio|edif\.|sector|ensanche|apartamento|apt\.|residencial|urbanización|plaza|centro|no\s*\d|#\d)\b/i.test(cleaned);
+    const looksLikeCompany = /\b(banco|seguro|ars|humano|universal|popular|reservas|central|del\s+)\b/i.test(cleaned);
+    const looksLikePhone = /^\d/.test(cleaned);
+    const looksLikeCedula = /\d{3}-\d{7}-\d/.test(cleaned);
+    
+    if (looksLikeAddress || looksLikeCompany || looksLikePhone || looksLikeCedula) return null;
+    
+    return cleaned;
+  } catch (err) {
+    console.error('AI name extraction error:', err.message);
+    return null;
+  }
+}
+
 async function reprocessConvNames(env) {
   if (!env.SEGUIMIENTO) return { processed: 0 };
   try {
-    const list = await env.SEGUIMIENTO.list({ prefix: 'conv:' });
+    const [convList, msgList] = await Promise.all([
+      env.SEGUIMIENTO.list({ prefix: 'conv:' }),
+      env.SEGUIMIENTO.list({ prefix: 'msgh:' }),
+    ]);
+    
+    // Build phone set from both conv: and msgh: keys
+    const phones = new Set();
+    for (const key of convList.keys) {
+      const p = key.name.slice('conv:'.length);
+      if (p && p !== 'undefined') phones.add(p);
+    }
+    for (const key of msgList.keys) {
+      const p = key.name.slice('msgh:'.length).split(':')[0];
+      if (p && p !== 'undefined') phones.add(p);
+    }
+    
     let processed = 0;
-    for (const key of list.keys) {
-      const data = await env.SEGUIMIENTO.get(key.name, 'json');
-      if (!data || !data.messages || !data.messages.length) continue;
+    for (const phone of phones) {
+      const msgs = await loadMsgsFromKV(env.SEGUIMIENTO, phone);
+      if (msgs.length === 0) continue;
       
-      const userMessages = data.messages.filter(m => m.role === 'user').map(m => m.content);
-      if (userMessages.length === 0) continue;
+      const data = await env.SEGUIMIENTO.get(`conv:${phone}`, 'json');
+      const currentName = data?.name || '';
       
-      // Use the same name detection logic inline
-      let detectedName = null;
-      for (const msg of userMessages) {
-        if (!msg) continue;
-        const t = msg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        
-        // Pattern: "Le habla la Sra Magaly Díaz", "Y quien le habla su esposa Sra Magaly Díaz"
-        const spoken = msg.match(/(?:le\s+habla|y\s+quien\s+le\s+habla|es|soy)\s+(?:la\s+)?(?:su\s+(?:esposa|esposo)\s+)?(?:sra?\.?|sr?\.?|don|doña)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?(?:\s|$|,|\.|;)/i);
-        if (spoken) {
-          detectedName = spoken[1];
-          break;
-        }
-        // Pattern 2: Name followed by phone - "Yanely Martinez Nuñez. 8096027571", "Sterlin Feliz, 8097033363", "Magaly Díaz 809-7080241"
-        if (!detectedName) {
-          const namePhone = msg.match(/^([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?\s*[.,\n]?\s*\d/);
-          if (namePhone) {
-            detectedName = namePhone[1];
-            break;
-          }
-        }
-        // Pattern 3: "Soy Yanely", "Mi nombre es Juan", "Me llamo Carla"
-        if (!detectedName) {
-          const intro = msg.match(/(?:soy|me\s+llamo|mi\s+nombre\s+es|llámame|me dicen)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/i);
-          if (intro) {
-            detectedName = intro[1];
-            break;
-          }
-        }
-        // Pattern 4: "Hola, me llamo Carla Reyes"
-        if (!detectedName) {
-          const greetingIntro = msg.match(/(?:hola|buenos?\s+d[ií]as|buenas\s+tardes|buenas\s+noches)[\s,;]*(?:me\s+llamo|mi\s+nombre\s+es|soy)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/i);
-          if (greetingIntro) {
-            detectedName = greetingIntro[1];
-            break;
-          }
-        }
-        // Pattern 5: Message starts with capitalized name (2-3 words) - "Yanely Martinez Nuñez", "Sterlin Feliz"
-        if (!detectedName) {
-          const startName = msg.match(/^([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?(?:\s|$|,|\.|;|\n)/);
-          if (startName) {
-            detectedName = startName[1];
-            break;
-          }
-        }
-      }
+      const detectedName = await extractNameWithAI(env, msgs);
       
-      if (detectedName) {
-        data.name = detectedName;
-        await env.SEGUIMIENTO.put(key.name, JSON.stringify(data), { expirationTtl: 604800 });
+      if (detectedName && detectedName !== currentName) {
+        const payload = data || { phone, messages: [], createdAt: new Date(msgs[0]?.ts || Date.now()).toISOString(), updatedAt: new Date().toISOString() };
+        payload.name = detectedName;
+        payload.messages = payload.messages || [];
+        await env.SEGUIMIENTO.put(`conv:${phone}`, JSON.stringify(payload), { expirationTtl: 604800 });
         processed++;
-        console.log(`Fixed name for ${data.phone}: ${detectedName}`);
+        console.log(`Fixed name for ${phone}: ${detectedName}`);
       }
     }
     return { processed };
@@ -959,14 +999,28 @@ input[type=date]{min-height:52px}
       <label>Dirección <span class="req">*</span></label>
       <input type="text" id="direccion" required placeholder="Calle, sector, ciudad">
     </div>
-    <div class="row">
+    <div class="requisitos-box">
+      <h3>Documentos obligatorios</h3>
+      <p class="hint" style="margin-bottom:12px">Sube una foto de cada documento para completar la solicitud.</p>
       <div class="form-group">
-        <label>Seguro / ARS</label>
-        <input type="text" id="seguro" placeholder="Humano, MAPFRE...">
+        <label>Cédula <span class="req">*</span></label>
+        <input type="file" id="foto_cedula" accept="image/*" required>
+        <div class="hint">Foto nítida de su cédula</div>
       </div>
       <div class="form-group">
-        <label>No. afiliado</label>
-        <input type="text" id="afiliado" placeholder="Número">
+        <label>Carnet de seguro <span class="req">*</span></label>
+        <input type="file" id="foto_seguro" accept="image/*" required>
+        <div class="hint">Foto nítida de su carnet de seguro</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="form-group">
+        <label>Seguro / ARS <span class="req">*</span></label>
+        <input type="text" id="seguro" required placeholder="Humano, MAPFRE...">
+      </div>
+      <div class="form-group">
+        <label>No. afiliado <span class="req">*</span></label>
+        <input type="text" id="afiliado" required placeholder="Número">
       </div>
     </div>
     <div class="row">
@@ -1054,6 +1108,14 @@ input[type=date]{min-height:52px}
   servSelect.addEventListener('change', renderRequisitos);
   renderRequisitos();
 
+  function fileToBase64(file, cb) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      cb(reader.result.split(',')[1] || '');
+    };
+    reader.readAsDataURL(file);
+  }
+
   form.addEventListener('submit', function(e) {
     e.preventDefault();
     if (!form.checkValidity()) { form.reportValidity(); return; }
@@ -1091,6 +1153,31 @@ input[type=date]{min-height:52px}
       }
     }
 
+    var filesToRead = [];
+    var fCedula = document.getElementById('foto_cedula');
+    var fSeguro = document.getElementById('foto_seguro');
+    if (fCedula && fCedula.files && fCedula.files[0]) filesToRead.push({ key: 'foto_cedula', file: fCedula.files[0] });
+    if (fSeguro && fSeguro.files && fSeguro.files[0]) filesToRead.push({ key: 'foto_seguro', file: fSeguro.files[0] });
+
+    var pending = filesToRead.length;
+    if (pending === 0) {
+      status.className = 'status error';
+      status.textContent = 'Debe adjuntar la foto de su cédula y de su carnet de seguro.';
+      status.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Enviar solicitud';
+      return;
+    }
+    filesToRead.forEach(function(item) {
+      fileToBase64(item.file, function(b64) {
+        data[item.key] = b64;
+        pending--;
+        if (pending === 0) submitForm(data);
+      });
+    });
+  });
+
+  function submitForm(data) {
     fetch('/api/submit-form', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1112,7 +1199,7 @@ input[type=date]{min-height:52px}
       btn.disabled = false;
       btn.textContent = 'Enviar solicitud';
     });
-  });
+  }
 
   function escHtml(s) {
     if (!s) return '';
@@ -1131,7 +1218,7 @@ input[type=date]{min-height:52px}
 async function handleFormSubmit(request, env) {
   try {
     const data = await request.json();
-    const { nombre, cedula, telefono, servicio, direccion, seguro, afiliado, email, fecha_nacimiento, genero, sucursal, notas, requisitos } = data;
+    const { nombre, cedula, telefono, servicio, direccion, seguro, afiliado, email, fecha_nacimiento, genero, sucursal, notas, requisitos, foto_cedula, foto_seguro } = data;
 
     const errors = [];
     if (!nombre || !nombre.trim()) errors.push('nombre');
@@ -1145,11 +1232,18 @@ async function handleFormSubmit(request, env) {
       });
     }
 
+    // Fotos obligatorias de cédula y seguro
+    if (!foto_cedula || !foto_seguro) {
+      return new Response(JSON.stringify({ ok: false, error: 'Debe adjuntar la foto de su cédula y de su carnet de seguro.' }), {
+        status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+      });
+    }
+
     const nameParts = nombre.trim().split(' ');
     const first_name = nameParts[0] || '';
     const last_name = nameParts.slice(1).join(' ') || '';
 
-    const formPayload = {
+    let formPayload = {
       nombre: nombre.trim(),
       first_name,
       last_name,
@@ -1169,6 +1263,28 @@ async function handleFormSubmit(request, env) {
       phone: telefono.trim(),
       created: new Date().toISOString()
     };
+
+    // Sanitizar nombre corrupto (p.ej. dirección puesta como nombre) y enriquecer con IA si queda sospechoso
+    formPayload = sanitizeFormPayload(formPayload);
+    const nombreOk = cleanName(formPayload.nombre);
+    const nombreSospechoso = !nombreOk || looksLikeAddress(formPayload.nombre) || looksLikeCompany(formPayload.nombre);
+    if (nombreSospechoso && !esOrigenPrueba(telefono, env)) {
+      try {
+        const aiResult = await extractData(env, [notas || '', nombre || '', direccion || '', seguro || ''], formPayload);
+        if (aiResult && aiResult.extraction) {
+          const aiNombre = cleanName(aiResult.extraction.nombre) || cleanName(aiResult.extraction.patient_name);
+          if (aiNombre && !looksLikeAddress(aiNombre) && !looksLikeCompany(aiNombre)) {
+            formPayload = { ...formPayload, ...aiResult.extraction, nombre: aiNombre, paciente: formPayload.paciente || aiNombre };
+            const aiParts = aiNombre.trim().split(' ');
+            formPayload.first_name = aiParts[0] || '';
+            formPayload.last_name = aiParts.slice(1).join(' ') || '';
+          }
+        }
+      } catch (e) {
+        console.error('Form AI enrichment error:', e.message);
+      }
+    }
+    formPayload = sanitizeFormPayload(formPayload);
 
     const nimboResult = { attempted: false };
     if (env.NIMBO_BASE_URL && env.NIMBO_ACCESS_TOKEN) {
@@ -1223,6 +1339,9 @@ async function handleFormSubmit(request, env) {
       // Also keep timestamped copy for history
       const histKey = `form:${Date.now()}:${telefono.trim()}`;
       await env.SEGUIMIENTO.put(histKey, JSON.stringify(formPayload));
+      // Guardar fotos por separado para no inflar el formPayload
+      if (foto_cedula) await env.SEGUIMIENTO.put(`media:cedula:${telefono.trim()}`, foto_cedula);
+      if (foto_seguro) await env.SEGUIMIENTO.put(`media:seguro:${telefono.trim()}`, foto_seguro);
     }
 
     const summary = JSON.stringify(formPayload);
@@ -1243,6 +1362,17 @@ async function handleFormSubmit(request, env) {
       crmResult = { ok: true, skipped: 'test_origin' };
     }
 
+    // Notificar al back-office WhatsApp con los datos del formulario
+    try {
+      await notifyBackoffice(env, formPayload, crmResult.ok ? crmResult : null, null);
+      if (!esOrigenPrueba(telefono, env)) {
+        if (foto_cedula) await sendBackofficePhoto(env, foto_cedula, `🪪 Cédula de ${nombre.trim()}`);
+        if (foto_seguro) await sendBackofficePhoto(env, foto_seguro, `🏥 Carnet de seguro de ${nombre.trim()}`);
+      }
+    } catch (e) {
+      console.error('Backoffice notify error (form):', e.message);
+    }
+
     return new Response(JSON.stringify({ ok: true, nimbo: nimboResult.attempted ? { person_id: nimboResult.person_id, consultation_id: nimboResult.consultation_id, existing: nimboResult.existing, error: nimboResult.error } : null, crm: crmResult }), {
       status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
     });
@@ -1258,174 +1388,6 @@ async function fixConversationNames(env) {
   return new Response(JSON.stringify(result), {
     status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
   });
-}
-
-// Re-escribe las keys de conversación con codificación UTF-8 limpia para corregir
-// mojibake (texto guardado con bytes Latin-1 que rompen los acentos).
-async function fixEncoding(env) {
-  if (!env.SEGUIMIENTO) {
-    return new Response(JSON.stringify({ error: 'KV no configurado' }), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
-  }
-  const kv = env.SEGUIMIENTO;
-  const MAX_KEYS = 5000;
-  const results = { conv: 0, msgh: 0, forms: 0, errors: [] };
-
-  function fixString(str) {
-    if (typeof str !== 'string' || !/[^\u0000-\u007F]/.test(str)) return str;
-    // Si ya tiene caracteres latinos válidos (acentos normales), no tocar.
-    if (/[áéíóúñÁÉÍÓÚÑ¿¡]/.test(str) && !/\uFFFD/.test(str)) return str;
-    // Re-encode: bytes mal interpretados como Latin-1 -> UTF-8.
-    try {
-      const fixed = decodeURIComponent(escape(str));
-      return fixed;
-    } catch {
-      return str;
-    }
-  }
-
-  function fixObject(obj) {
-    if (!obj || typeof obj !== 'object') return obj;
-    for (const k of Object.keys(obj)) {
-      if (typeof obj[k] === 'string') {
-        obj[k] = fixString(obj[k]);
-      } else if (Array.isArray(obj[k])) {
-        obj[k] = obj[k].map((item) => (typeof item === 'string' ? fixString(item) : fixObject(item)));
-      } else if (obj[k] && typeof obj[k] === 'object') {
-        obj[k] = fixObject(obj[k]);
-      }
-    }
-    return obj;
-  }
-
-  try {
-    // Keys conv:*
-    let cursor;
-    do {
-      const res = await kv.list({ prefix: 'conv:', limit: 1000, cursor });
-      for (const key of res.keys) {
-        const data = await kv.get(key.name, 'json');
-        if (!data) continue;
-        const fixed = fixObject(JSON.parse(JSON.stringify(data)));
-        const original = JSON.stringify(data);
-        const reencoded = JSON.stringify(fixed);
-        if (original !== reencoded) {
-          await kv.put(key.name, reencoded, { expirationTtl: 604800 });
-          results.conv++;
-        }
-      }
-      cursor = res.cursor;
-      if (results.conv > MAX_KEYS) break;
-    } while (cursor);
-
-    // Keys msgh:*
-    cursor = null;
-    do {
-      const res = await kv.list({ prefix: 'msgh:', limit: 1000, cursor });
-      for (const key of res.keys) {
-        const data = await kv.get(key.name, 'json');
-        if (!data) continue;
-        const fixed = fixObject(JSON.parse(JSON.stringify(data)));
-        const original = JSON.stringify(data);
-        const reencoded = JSON.stringify(fixed);
-        if (original !== reencoded) {
-          await kv.put(key.name, reencoded, { expirationTtl: 86400 });
-          results.msgh++;
-        }
-      }
-      cursor = res.cursor;
-      if (results.msgh > MAX_KEYS) break;
-    } while (cursor);
-
-    // Keys form:*
-    cursor = null;
-    do {
-      const res = await kv.list({ prefix: 'form:', limit: 1000, cursor });
-      for (const key of res.keys) {
-        const data = await kv.get(key.name, 'json');
-        if (!data) continue;
-        const fixed = fixObject(JSON.parse(JSON.stringify(data)));
-        const original = JSON.stringify(data);
-        const reencoded = JSON.stringify(fixed);
-        if (original !== reencoded) {
-          await kv.put(key.name, reencoded);
-          results.forms++;
-        }
-      }
-      cursor = res.cursor;
-      if (results.forms > MAX_KEYS) break;
-    } while (cursor);
-
-    await kv.delete('cache:conv-list');
-    return new Response(JSON.stringify(results), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message, ...results }), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
-  }
-}
-
-// Borra keys basura: conv: sin phone, conv:chat-web, y cache de lista.
-async function cleanupKeys(env) {
-  if (!env.SEGUIMIENTO) {
-    return new Response(JSON.stringify({ error: 'KV no configurado' }), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
-  }
-  const kv = env.SEGUIMIENTO;
-  const results = { conv: 0, msgh: 0, cache: 0, errors: [] };
-
-  try {
-    let cursor;
-    do {
-      const res = await kv.list({ prefix: 'conv:', limit: 1000, cursor });
-      for (const key of res.keys) {
-        const data = await kv.get(key.name, 'json');
-        if (!data) continue;
-        const p = data.phone || '';
-        if (!p || p === 'undefined' || p === 'chat-web') {
-          await kv.delete(key.name);
-          results.conv++;
-          continue;
-        }
-      }
-      cursor = res.cursor;
-    } while (cursor);
-
-    cursor = null;
-    do {
-      const res = await kv.list({ prefix: 'msgh:', limit: 1000, cursor });
-      for (const key of res.keys) {
-        const p = key.name.slice('msgh:'.length).split(':')[0];
-        if (!p || p === 'undefined' || p === 'chat-web') {
-          await kv.delete(key.name);
-          results.msgh++;
-        }
-      }
-      cursor = res.cursor;
-    } while (cursor);
-
-    cursor = null;
-    do {
-      const res = await kv.list({ prefix: 'cache:', limit: 1000, cursor });
-      for (const key of res.keys) {
-        await kv.delete(key.name);
-        results.cache++;
-      }
-      cursor = res.cursor;
-    } while (cursor);
-
-    return new Response(JSON.stringify(results), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message, ...results }), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
-  }
 }
 
 function serveAdmin(env) {
@@ -1504,7 +1466,7 @@ async function serveFormsAPI(env) {
     const forms = [];
     for (const key of list.keys) {
       const data = await env.SEGUIMIENTO.get(key.name, 'json');
-      if (data) forms.push(data);
+      if (data) forms.push(sanitizeFormPayload(data));
     }
     forms.sort((a, b) => new Date(b.created) - new Date(a.created));
     return new Response(JSON.stringify(forms), {
@@ -1515,6 +1477,189 @@ async function serveFormsAPI(env) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+}
+
+async function serveExtractionsAPI(env, url) {
+  if (!env.SEGUIMIENTO) {
+    return new Response(JSON.stringify([]), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+  try {
+    const dateFilter = url ? url.searchParams.get('date') : null;
+    const [convList, stateList, formList] = await Promise.all([
+      env.SEGUIMIENTO.list({ prefix: 'conv:' }),
+      env.SEGUIMIENTO.list({ prefix: 'state:conv:' }),
+      env.SEGUIMIENTO.list({ prefix: 'form:latest:' }),
+    ]);
+    const extractions = [];
+    const seen = new Set();
+    const matchesDate = (iso) => {
+      if (!dateFilter) return true;
+      return (iso || '').slice(0, 10) === dateFilter;
+    };
+    for (const key of stateList.keys) {
+      const phone = key.name.slice('state:conv:'.length);
+      const data = await env.SEGUIMIENTO.get(key.name, 'json');
+      const updatedAt = data && (data.updatedAt || (data.extraction && data.extraction.updatedAt));
+      if (data && data.extraction && matchesDate(updatedAt)) {
+        extractions.push({ phone, extraction: data.extraction, updatedAt: updatedAt || new Date().toISOString() });
+        seen.add(phone);
+      }
+    }
+    for (const key of convList.keys) {
+      const phone = key.name.slice('conv:'.length);
+      if (seen.has(phone)) continue;
+      const data = await env.SEGUIMIENTO.get(key.name, 'json');
+      const updatedAt = data && (data.updatedAt || (data.extraction && data.extraction.updatedAt));
+      if (data && data.extraction && matchesDate(updatedAt)) {
+        extractions.push({ phone, extraction: data.extraction, updatedAt: updatedAt || new Date().toISOString() });
+        seen.add(phone);
+      }
+    }
+    for (const key of formList.keys) {
+      const phone = key.name.slice('form:latest:'.length);
+      const data = await env.SEGUIMIENTO.get(key.name, 'json');
+      if (!data) continue;
+      const updatedAt = data.created || data.updatedAt || new Date().toISOString();
+      if (!matchesDate(updatedAt)) continue;
+      const extraction = sanitizeFormPayload({
+        ...data,
+        cedula: data.cedula || null,
+        telefono: data.telefono || phone || null,
+        direccion: data.direccion || null,
+        servicio: data.servicio || null,
+        seguro: data.seguro || null,
+        afiliado: data.afiliado || null,
+        email: data.email || null,
+        fecha_nacimiento: data.fecha_nacimiento || null,
+        genero: data.genero || null,
+        sucursal: data.sucursal || null,
+        notas: data.notas || null,
+      });
+      extractions.push({ phone, source: 'form', extraction, updatedAt });
+    }
+    extractions.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    return new Response(JSON.stringify(extractions), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+}
+
+async function reprocessForms(env, url) {
+  if (!env.SEGUIMIENTO) {
+    return new Response(JSON.stringify({ error: 'KV not configured' }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+  const dateFilter = url ? url.searchParams.get('date') : null;
+  const list = await env.SEGUIMIENTO.list({ prefix: 'form:' });
+  const keys = list.keys; // incluye form:latest: y form:* históricas
+  const changed = [];
+  let errors = 0;
+  for (const key of keys) {
+    const existing = await env.SEGUIMIENTO.get(key.name, 'json');
+    if (!existing) continue;
+    if (dateFilter && (existing.created || '').slice(0, 10) !== dateFilter) continue;
+    try {
+      let payload = existing;
+      const nameOk = cleanName(payload.nombre);
+      const nombreSospechoso = !nameOk || looksLikeAddress(payload.nombre) || looksLikeCompany(payload.nombre);
+      if (nombreSospechoso) {
+        // Si existe un patient_name válido (p.ej. agendan para otra persona), corregir por sanitización
+        if (payload.patient_name && cleanName(payload.patient_name) && !looksLikeAddress(payload.patient_name)) {
+          payload = sanitizeFormPayload(payload);
+          await env.SEGUIMIENTO.put(key.name, JSON.stringify(payload));
+          changed.push(key.name.split(':').pop());
+          continue;
+        }
+        const userTexts = [payload.notas || '', payload.nombre || '', payload.direccion || '', payload.seguro || ''].filter(Boolean);
+        if (userTexts.length) {
+          const aiResult = await extractData(env, userTexts, payload);
+          if (aiResult && aiResult.extraction) {
+            const aiNombre = cleanName(aiResult.extraction.nombre) || cleanName(aiResult.extraction.patient_name) || cleanName(aiResult.extraction.caller_name);
+            const merged = { ...payload, ...aiResult.extraction };
+            if (aiNombre && !looksLikeAddress(aiNombre) && !looksLikeCompany(aiNombre)) {
+              merged.nombre = aiNombre;
+              merged.paciente = payload.paciente || aiNombre;
+              merged.patient_name = merged.patient_name || aiNombre;
+            }
+            delete merged.confidence;
+            delete merged.updatedAt;
+            payload = sanitizeFormPayload(merged);
+          }
+        }
+      } else {
+        payload = sanitizeFormPayload(payload);
+      }
+      await env.SEGUIMIENTO.put(key.name, JSON.stringify(payload));
+      changed.push(key.name.split(':').pop());
+    } catch (e) {
+      errors++;
+      console.error('reprocess error', key.name, e.message);
+    }
+  }
+  return new Response(JSON.stringify({ processed: keys.length, changed: changed.length, errors, phones: changed }), {
+    status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+  });
+}
+
+async function serveDataQuality(env, url) {
+  if (!env.SEGUIMIENTO) {
+    return new Response(JSON.stringify({ error: 'KV not configured' }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+  try {
+    const [convList, stateList, formList] = await Promise.all([
+      env.SEGUIMIENTO.list({ prefix: 'conv:' }),
+      env.SEGUIMIENTO.list({ prefix: 'state:conv:' }),
+      env.SEGUIMIENTO.list({ prefix: 'form:latest:' }),
+    ]);
+    const issues = [];
+    const seen = new Set();
+    const check = (phone, source, rec) => {
+      if (!rec || seen.has(phone)) return;
+      const issuesFor = [];
+      if (looksLikeAddress(rec.nombre) || looksLikeCompany(rec.nombre)) issuesFor.push('nombre parece dirección/empresa');
+      if (!rec.nombre) issuesFor.push('sin nombre');
+      if (!rec.telefono) issuesFor.push('sin teléfono');
+      if (rec.cedula && /^0+$/.test(String(rec.cedula).replace(/[^\d]/g, ''))) issuesFor.push('cédula inválida (todo ceros)');
+      if (!rec.servicio) issuesFor.push('sin servicio');
+      if (issuesFor.length) {
+        seen.add(phone);
+        issues.push({ phone, source, issues: issuesFor, record: rec });
+      }
+    };
+    for (const key of stateList.keys) {
+      const phone = key.name.slice('state:conv:'.length);
+      const data = await env.SEGUIMIENTO.get(key.name, 'json');
+      check(phone, 'state', (data && data.extraction) || data);
+    }
+    for (const key of convList.keys) {
+      const phone = key.name.slice('conv:'.length);
+      const data = await env.SEGUIMIENTO.get(key.name, 'json');
+      check(phone, 'conv', (data && data.extraction) || data);
+    }
+    for (const key of formList.keys) {
+      const phone = key.name.slice('form:latest:'.length);
+      const data = await env.SEGUIMIENTO.get(key.name, 'json');
+      check(phone, 'form', data ? sanitizeFormPayload(data) : null);
+    }
+    return new Response(JSON.stringify({ count: issues.length, issues }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
     });
   }
 }
@@ -1658,7 +1803,7 @@ function loadConv(){
   }).catch(function(){});
 }
 loadConv();
-setInterval(loadConv,3000);
+setInterval(loadConv,30000);
 ` : `
 function formatPhone(phone) {
     const cleaned = phone.replace(/\D/g, '');
@@ -1690,7 +1835,7 @@ function formatPhone(phone) {
       });
       
       div.innerHTML=list.map(c=>{
-        const last=c.lastMessage||{};
+        const last=c.messages&&c.messages.length>0?c.messages[c.messages.length-1]:{};
         const pre=last.content?last.content.substring(0,80):'';
         const time=c.updatedAt?new Date(c.updatedAt).toLocaleString('es-DO',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
         const displayName = c.name ? c.name : formatPhone(c.phone);
@@ -1708,7 +1853,7 @@ function filterByService(){
   window.location.href = '/conversations' + (service ? '?service=' + encodeURIComponent(service) : '');
 }
 loadList();
-setInterval(loadList,5000);
+setInterval(loadList,30000);
 `}
 </script>
 </body>
@@ -1719,154 +1864,148 @@ setInterval(loadList,5000);
   });
 }
 
-async function serveConversationsJSON(env, url) {
-  if (!env.SEGUIMIENTO) {
-    return new Response(JSON.stringify([]), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+const CONV_INDEX_KEY = 'convindex:v1';
+const CONV_INDEX_TTL = 6 * 60 * 1000;
+
+function decorateMessages(msgs) {
+  return msgs.map((h) => ({
+    role: h.role === 'user' ? 'user' : 'bot',
+    content: h.content,
+    timestamp: new Date(h.ts || Date.now()).toISOString(),
+  }));
+}
+
+async function buildConversationIndex(env) {
+  const kv = env.SEGUIMIENTO;
+
+  // Single passthrough of list() calls: one per prefix (no per-phone list()).
+  const [formList, convList, msgList, latestForms] = await Promise.all([
+    kv.list({ prefix: 'form:' }),
+    kv.list({ prefix: 'conv:' }),
+    kv.list({ prefix: 'msgh:' }),
+    kv.list({ prefix: 'form:latest:' }),
+  ]);
+
+  // phone -> service label
+  const phoneToService = new Map();
+  for (const key of formList.keys) {
+    const data = await kv.get(key.name, 'json');
+    if (data && data.phone && data.servicio) {
+      phoneToService.set(data.phone, getFormServicioLabel(data.servicio) || data.servicio);
+    }
+  }
+
+  // phone -> name (fallback from latest forms)
+  const formNameMap = new Map();
+  for (const key of latestForms.keys) {
+    const data = await kv.get(key.name, 'json');
+    if (data && data.phone && data.nombre) formNameMap.set(data.phone, data.nombre);
+  }
+
+  // Group all msgh: messages by phone from a single list (avoids N list() calls).
+  const msgsByPhone = new Map();
+  for (const key of msgList.keys) {
+    const p = key.name.slice('msgh:'.length).split(':')[0];
+    if (!msgsByPhone.has(p)) msgsByPhone.set(p, []);
+    msgsByPhone.get(p).push(key.name);
+  }
+  for (const [p, keys] of msgsByPhone) {
+    const msgs = [];
+    for (const k of keys) {
+      const v = await kv.get(k, 'json');
+      if (v && v.role) msgs.push(v);
+    }
+    msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    msgsByPhone.set(p, msgs);
+  }
+
+  const seen = new Set();
+  const conversations = [];
+
+  for (const key of convList.keys) {
+    const data = await kv.get(key.name, 'json');
+    if (!data) continue;
+    data.service = phoneToService.get(data.phone) || '';
+    if (!data.name && formNameMap.has(data.phone)) data.name = formNameMap.get(data.phone);
+    const msgs = msgsByPhone.get(data.phone) || [];
+    if (msgs.length > 0) {
+      data.messages = decorateMessages(msgs);
+      data.messageCount = msgs.length;
+      data.updatedAt = new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString();
+    } else if (!data.messageCount) {
+      data.messageCount = Array.isArray(data.messages) ? data.messages.length : 0;
+    }
+    conversations.push(data);
+    seen.add(data.phone);
+  }
+
+  for (const [p, msgs] of msgsByPhone) {
+    if (seen.has(p) || msgs.length === 0) continue;
+    conversations.push({
+      phone: p,
+      name: formNameMap.get(p) || '',
+      service: phoneToService.get(p) || '',
+      messages: decorateMessages(msgs),
+      messageCount: msgs.length,
+      createdAt: new Date(msgs[0].ts || Date.now()).toISOString(),
+      updatedAt: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString(),
     });
   }
+
+  conversations.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+  return conversations;
+}
+
+async function getConversationIndex(env) {
+  const kv = env.SEGUIMIENTO;
+  const cached = await kv.get(CONV_INDEX_KEY, 'json');
+  const now = Date.now();
+  if (cached && Array.isArray(cached.conversations) && cached.builtAt && now - cached.builtAt < CONV_INDEX_TTL) {
+    return cached.conversations;
+  }
+  const conversations = await buildConversationIndex(env);
+  await kv.put(CONV_INDEX_KEY, JSON.stringify({ builtAt: Date.now(), conversations }), {
+    expirationTtl: Math.ceil((CONV_INDEX_TTL + 60 * 1000) / 1000),
+  });
+  return conversations;
+}
+
+function jsonResponse(body) {
+  return new Response(JSON.stringify(body), {
+    status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+  });
+}
+
+async function serveConversationsJSON(env, url) {
+  if (!env.SEGUIMIENTO) return jsonResponse([]);
   try {
-    const kv = env.SEGUIMIENTO;
     const phone = url.searchParams.get('phone');
-    const serviceFilter = url.searchParams.get('service'); // filter by service
+    const serviceFilter = url.searchParams.get('service');
+    const conversations = await getConversationIndex(env);
 
-    // Lectura paralela en lotes para no disparar el límite de subrequests y ser rápido.
-    async function getMany(keys, batch = 20) {
-      const out = [];
-      for (let i = 0; i < keys.length; i += batch) {
-        const chunk = keys.slice(i, i + batch);
-        const vals = await Promise.all(chunk.map((k) => kv.get(k, 'json').catch(() => null)));
-        out.push(...vals);
-      }
-      return out;
-    }
-
-    // Vista de conversación individual: solo carga los mensajes de esa conversa.
     if (phone) {
-      const [data, msgs] = await Promise.all([kv.get(`conv:${phone}`, 'json'), loadMsgsFromKV(kv, phone)]);
-      if (msgs.length > 0) {
-        const mapped = msgs.map((h) => ({
-          role: h.role === 'user' ? 'user' : 'bot',
-          content: h.content,
-          timestamp: new Date(h.ts || Date.now()).toISOString(),
-        }));
-        const result = {
-          phone,
-          name: (data && data.name) || '',
-          service: '',
-          messages: mapped,
-          messageCount: mapped.length,
-          createdAt: new Date(msgs[0].ts || Date.now()).toISOString(),
-          updatedAt: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString(),
-        };
-        // service friendly label desde forms
-        const form = await kv.get(`form:latest:${phone}`, 'json');
-        if (form && form.servicio) result.service = getFormServicioLabel(form.servicio) || form.servicio;
-        return new Response(JSON.stringify(result), {
-          status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-        });
-      }
-      return new Response(JSON.stringify(data ? { phone, name: data.name || '', messages: [], messageCount: 0 } : { phone, messages: [], messageCount: 0 }), {
-        status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-      });
+      const data = conversations.find((c) => c.phone === phone);
+      return jsonResponse(
+        data || { phone, messages: [], messageCount: 0 }
+      );
     }
 
-    // VISTA DE LISTA — cache corta (20s) para que el polling de 5s del front no recalcule todo.
-    const CACHE_KEY = 'cache:conv-list';
-    const cached = await kv.get(CACHE_KEY, 'json');
-    if (cached && Array.isArray(cached.list)) {
-      let out = cached.list;
-      if (serviceFilter) out = out.filter((c) => c.service && c.service.toLowerCase().includes(serviceFilter.toLowerCase()));
-      return new Response(JSON.stringify(out), {
-        status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-      });
-    }
-
-    const [convList, latestForms] = await Promise.all([
-      kv.list({ prefix: 'conv:' }),
-      kv.list({ prefix: 'form:latest:' }),
-    ]);
-
-    // Mapa phone -> form (nombre + servicio)
-    const formNameMap = new Map();
-    const phoneToService = new Map();
-    const formVals = await getMany(latestForms.keys.map((k) => k.name));
-    for (const data of formVals) {
-      if (!data) continue;
-      if (data.phone && data.nombre) formNameMap.set(data.phone, data.nombre);
-      if (data.phone && data.servicio) phoneToService.set(data.phone, getFormServicioLabel(data.servicio) || data.servicio);
-    }
-
-    const convVals = await getMany(convList.keys.map((k) => k.name));
-    const conversations = [];
-    for (const data of convVals) {
-      if (!data) continue;
-      const p = data.phone || '';
-      if (!p || p === 'undefined' || p === 'chat-web') continue; // filtrar basura
-      // Para la lista NO cargamos todos los mensajes: usamos datos ya almacenados en conv:
-      const messages = Array.isArray(data.messages) ? data.messages : [];
-      const last = messages.length > 0 ? messages[messages.length - 1] : null;
-      conversations.push({
-        phone: p,
-        name: data.name || formNameMap.get(p) || '',
-        service: phoneToService.get(p) || '', // formNameMap/phoneToService
-        messageCount: typeof data.messageCount === 'number' ? data.messageCount : messages.length,
-        lastMessage: last ? { role: last.role, content: last.content, timestamp: last.timestamp } : null,
-        updatedAt: data.updatedAt || (last && last.timestamp) || new Date().toISOString(),
-      });
-    }
-
-    // Conversation keys que no quedaron en conv: (solo de msgh:) — por teléfono válido
-    const knownPhones = new Set(conversations.map((c) => c.phone));
-    const msgList = await kv.list({ prefix: 'msgh:' });
-    const byPhone = new Map();
-    for (const key of msgList.keys) {
-      const p = key.name.slice('msgh:'.length).split(':')[0];
-      if (!p || p === 'undefined' || p === 'chat-web' || knownPhones.has(p)) continue;
-      if (!byPhone.has(p)) byPhone.set(p, []);
-      byPhone.get(p).push(key.name);
-    }
-    for (const [p, keys] of byPhone) {
-      const vals = await getMany(keys);
-      const msgs = vals.filter((v) => v && v.role).sort((a, b) => (a.ts || 0) - (b.ts || 0));
-      if (msgs.length === 0) continue;
-      conversations.push({
-        phone: p,
-        name: formNameMap.get(p) || '',
-        service: phoneToService.get(p) || '',
-        messageCount: msgs.length,
-        lastMessage: msgs[msgs.length - 1] ? { role: msgs[msgs.length - 1].role, content: msgs[msgs.length - 1].content, timestamp: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString() } : null,
-        updatedAt: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString(),
-      });
-    }
-
-    // Ordenar por última actividad y aplicar filtro
-    conversations.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
     let filtered = conversations;
-    if (serviceFilter) filtered = filtered.filter((c) => c.service && c.service.toLowerCase().includes(serviceFilter.toLowerCase()));
-
-    // Escribir cache
-    try { await kv.put(CACHE_KEY, JSON.stringify({ generated: new Date().toISOString(), list: conversations }), { expirationTtl: 20 }); } catch {}
-
-    return new Response(JSON.stringify(filtered), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
+    if (serviceFilter) {
+      filtered = conversations.filter((c) => c.service && c.service.toLowerCase().includes(serviceFilter.toLowerCase()));
+    }
+    return jsonResponse(filtered);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-    });
+    return jsonResponse({ error: err.toString() });
   }
 }
 
 async function loadMsgsFromKV(kv, phone) {
   const list = await kv.list({ prefix: `msgh:${phone}:` });
   const msgs = [];
-  for (let i = 0; i < list.keys.length; i += 20) {
-    const chunk = list.keys.slice(i, i + 20);
-    const vals = await Promise.all(chunk.map((key) => kv.get(key.name, 'json').catch(() => null)));
-    for (const v of vals) {
-      if (v && v.role) msgs.push(v);
-    }
+  for (const key of list.keys) {
+    const v = await kv.get(key.name, 'json');
+    if (v && v.role) msgs.push(v);
   }
   msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
   return msgs;

@@ -1,0 +1,83 @@
+[
+  {
+    "id": "visita_domiciliaria",
+    "nombre": "Visita Domiciliaria",
+    "atajo": "*Visita*",
+    "preguntas": [
+      "Nombre completo del paciente:",
+      "Edad:",
+      "Dirección exacta (sector, calle y referencia):",
+      "Teléfono o WhatsApp de contacto:",
+      "¿Posee seguro médico? (Sí/No) ¿Cuál?:",
+      "Diagnóstico o motivo de solicitud (si lo conoce):",
+      "¿Cuenta con indicación del médico tratante? (Sí/No):",
+      "Tipo de servicio requerido (Asistencia general / Procedimientos clínicos / Cuidados de heridas / Cuidados especiales):",
+      "Modalidad del servicio (Procedimiento único / Turno 4h / Turno 8h / Turno 12h / Turno 24h):"
+    ]
+  },
+  {
+    "id": "enfermeria",
+    "nombre": "Servicio de Enfermería",
+    "atajo": "*Enfermeria*",
+    "preguntas": [
+      "Nombre completo del paciente:",
+      "Edad:",
+      "Dirección exacta (sector, calle y referencia):",
+      "Teléfono o WhatsApp de contacto:",
+      "¿Posee seguro médico? (Sí/No) ¿Cuál?:",
+      "Diagnóstico o motivo de solicitud:",
+      "¿Cuenta con indicación médica? (Sí/No):",
+      "Tipo de servicio: (Asistencia general / Procedimientos clínicos / Cuidados de heridas / Cuidados especiales):",
+      "Modalidad: (Procedimiento único / Turno 4h / 8h / 12h / 24h):"
+    ]
+  },
+  {
+    "id": "neurologia_paliativos",
+    "nombre": "Cuidados Paliativos Neurológicos",
+    "atajo": "*Neurologia*",
+    "preguntas": [
+      "Nombre completo del paciente:",
+      "Edad:",
+      "Sexo:",
+      "Diagnóstico o condición: (ACV / AIT / Parkinson / Alzheimer/Demencia / ELA / Otra):",
+      "Dirección exacta (sector, calle, referencia):",
+      "Teléfono o WhatsApp de contacto:",
+      "Nombre del cuidador principal:",
+      "Teléfono del cuidador:",
+      "Estado actual: (¿Encamado? / ¿Se mueve con ayuda? / ¿Alimentación por sonda? / ¿Úlceras? / ¿Sonda vesical? / ¿Dificultad para hablar? / ¿Dolor o agitación?):",
+      "¿Tiene indicación médica? (Sí/No - enviar foto si tiene):",
+      "Servicios deseados: (Enfermería neurológica diaria / Cuidados paliativos):"
+    ]
+  },
+  {
+    "id": "hemohogar",
+    "nombre": "Transfusión Domiciliaria (Hemohogar)",
+    "atajo": "*Hemohogar*",
+    "preguntas": [
+      "Nombre completo del paciente:",
+      "Edad:",
+      "Dirección exacta:",
+      "Teléfono de contacto:",
+      "¿Cuenta con indicación médica? (Sí/No):",
+      "¿Tiene hemograma reciente? (Sí/No):",
+      "¿Sangre autorizada por Banco de Sangre? (Sí/No):",
+      "¿Pruebas cruzadas realizadas? (Sí/No):",
+      "¿Cuenta con cuidador responsable presente? (Sí/No):"
+    ]
+  },
+  {
+    "id": "bomba_intratecal",
+    "nombre": "Recarga de Bomba Intratecal",
+    "atajo": "*Bomba*",
+    "preguntas": [
+      "Nombre completo del paciente:",
+      "Edad:",
+      "Dirección:",
+      "Teléfono de contacto:",
+      "Tipo de bomba: (Medtronic / Otra):",
+      "Medicamentos habituales:",
+      "Fecha de última recarga:",
+      "¿Tiene indicación médica actualizada? (Sí/No):"
+    ]
+  }
+]

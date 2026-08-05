@@ -90,7 +90,7 @@ export async function setCachedReply(text, reply, kv) {
   } catch {}
 }
 
-async function callGroq(apiKey, prompt) {
+export async function callGroq(apiKey, prompt) {
   const url = 'https://api.groq.com/openai/v1/chat/completions';
   const response = await fetchWithTimeout(url, {
     method: 'POST',

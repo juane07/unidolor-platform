@@ -28,10 +28,181 @@
 
 import { SITE_URL } from './knowledge.js';
 
-import { servicios } from './knowledge-base.js';
-import { faq, politicas, horarios, CATALOGO_COMPLETO } from './knowledge-generated.js';
+export const servicios = [
+  {
+    categoria: "Consultas Médicas",
+    servicios: [
+      { nombre: "Consulta médica general a domicilio", codigo: "CMD", descripcion: "Evaluación médica completa en la comodidad del hogar.", preguntar: ["Nombre del paciente", "Edad", "Cédula", "Dirección", "Síntomas o motivo de consulta", "¿Tiene seguro médico?", "¿Tiene estudios previos?"] },
+      { nombre: "Consulta médica en clínica", codigo: "CMC", descripcion: "Atención especializada en nuestro consultorio con la Dra. Bethania Martínez.", preguntar: ["Nombre del paciente", "Cédula", "Motivo de consulta", "¿Tiene referimiento médico?", "¿Tiene estudios de imágenes previos?", "¿Qué seguro tiene?"] },
+      { nombre: "Consulta especialista", codigo: "CE", descripcion: "Consulta con médicos especialistas en ortopedia, neurología, etc.", preguntar: ["Nombre del paciente", "Especialidad requerida", "¿Tiene referimiento?", "¿Qué estudios previos tiene?", "Motivo de consulta detallado"] },
+      { nombre: "Consulta intrahospitalaria", codigo: "CI", descripcion: "Atención especializada para pacientes hospitalizados.", preguntar: ["Nombre del paciente", "Hospital donde está ingresado", "Habitación", "Médico tratante", "Diagnóstico actual"] },
+    ]
+  },
+  {
+    categoria: "Medicina del Dolor",
+    servicios: [
+      { nombre: "Manejo del dolor", codigo: "DOL", descripcion: "Atención especializada para pacientes con dolor crónico, oncológico o complejo. Incluye valoración, manejo farmacológico e intervencionista.", preguntar: ["Tipo de dolor (localización, intensidad, frecuencia)", "Diagnóstico de base", "Medicamentos actuales", "Médico tratante", "¿Tratamientos previos (medicamentos, procedimientos)?", "¿Tiene estudios de imágenes o laboratorios recientes?"] },
+      { nombre: "Recarga de bomba intratecal (Medtronic)", codigo: "BOM", descripcion: "Recarga de bomba de infusión intratecal Medtronic en domicilio.", preguntar: ["Tipo de bomba (Medtronic u otra)", "Medicamentos habituales", "Fecha de última recarga", "¿Tiene indicación médica actualizada?", "¿Ha tenido alarmas o problemas?"] },
+      { nombre: "Bomba elastomérica", codigo: "BEL", descripcion: "Dispositivo de infusión continua para administración de medicamentos.", preguntar: ["¿Qué medicamento necesita?", "¿Vía de administración?", "¿Tiene acceso venoso?", "¿Tiene indicación médica?"] },
+    ]
+  },
+  {
+    categoria: "Procedimientos Intervencionistas",
+    servicios: [
+      { nombre: "Procedimientos intervencionistas", codigo: "PROC", descripcion: "Bloqueos nerviosos, radiofrecuencia, rizólisis, infiltraciones, epidurales, facetarios y otros guiados por ecografía o fluoroscopia.", preguntar: ["¿Tipo de procedimiento o zona del cuerpo?", "¿Tiene indicación médica?", "¿Diagnóstico de base y médico tratante?", "¿Estudios de imágenes previos?", "¿Medicamentos actuales (anticoagulantes)?", "¿Alergias conocidas?"] },
+    ]
+  },
+  {
+    categoria: "Cuidados Paliativos",
+    servicios: [
+      { nombre: "Cuidados paliativos", codigo: "PAL", descripcion: "Atención especializada para pacientes con enfermedades graves o terminales. Control de síntomas, apoyo familiar, atención domiciliaria y hospitalaria.", preguntar: ["¿Dónde se requiere (domicilio o clínica)?", "¿Diagnóstico de base y médico tratante?", "¿Estado actual del paciente?", "¿Tiene cuidador familiar?", "¿Qué tipo de atención necesita? (control síntomas, sedación, apoyo)"] },
+    ]
+  },
+  {
+    categoria: "Enfermería",
+    servicios: [
+      { nombre: "Enfermería general a domicilio", codigo: "ENF", descripcion: "Atención de enfermería profesional. Según necesidad puede incluir curaciones, canalización, medicación, nebulizaciones, sondas, sueros, muestras, signos vitales. Modalidades 4h a 24h.", preguntar: ["¿Qué tipo de atención de enfermería necesita?", "¿Horas al día y por cuántos días (tanda)?", "¿Paciente encamado?", "¿Tiene cuidador familiar?", "¿Indicación médica vigente?", "¿Tiene los insumos o los proveemos?"] },
+      { nombre: "Toma de signos vitales", codigo: "SV", descripcion: "Presión arterial, frecuencia cardíaca, temperatura, saturación de oxígeno.", preguntar: ["¿Frecuencia requerida?", "¿Tiene indicación médica?", "¿Reportar a alguien?"] },
+      { nombre: "Aplicación de medicamentos", codigo: "MED", descripcion: "Administración IM, SC, IV según indicación médica.", preguntar: ["¿Qué medicamento?", "¿Dosis y vía?", "¿Tiene indicación médica?", "¿Alergias conocidas?"] },
+      { nombre: "Nebulizaciones / Oxigenoterapia", codigo: "NEB", descripcion: "Administración de medicamentos inhalados y oxígeno.", preguntar: ["¿Qué medicamento nebulizar?", "¿Frecuencia de nebulizaciones?", "¿Requiere oxígeno?", "¿Tiene indicación médica?"] },
+      { nombre: "Curas (simples y complejas)", codigo: "CUR", descripcion: "Curaciones de heridas, úlceras por presión, postquirúrgicas y quemaduras.", preguntar: ["¿Tipo de herida?", "¿Tiempo de evolución?", "¿Signos de infección?", "¿Frecuencia de curación (cada cuántos días)?", "¿Por cuánto tiempo?", "¿Tiene indicación médica?", "¿Tiene materiales de curación?"] },
+      { nombre: "Colocación/retiro de sondas", codigo: "SON", descripcion: "Sondas vesicales (Foley), nasogástricas y de alimentación.", preguntar: ["¿Tipo de sonda?", "¿Colocar o retirar?", "¿Tiene indicación médica?", "¿Alergias conocidas?"] },
+      { nombre: "Administración de sueros / antibióticos IV", codigo: "SUE", descripcion: "Canalización venosa y administración de sueros o antibióticos intravenosos.", preguntar: ["¿Qué medicamento administrar?", "¿Dosis y duración de la infusión?", "¿Tiene acceso venoso?", "¿Tiene indicación médica?"] },
+      { nombre: "Extracción de muestras", codigo: "MUES", descripcion: "Toma de muestras sanguíneas y otros fluidos para análisis.", preguntar: ["¿Qué exámenes necesita?", "¿Tiene orden médica?", "¿Dónde procesar las muestras?"] },
+    ]
+  },
+  {
+    categoria: "Rayos X",
+    servicios: [
+      { nombre: "Rayos X a domicilio", codigo: "RX", descripcion: "Radiografía portátil digital en el hogar. Resultados en 24-48h.", preguntar: ["¿Qué área del cuerpo necesita? (tórax, columna, extremidad, abdomen)", "¿Tiene indicación médica?", "¿Está encamado o puede movilizarse?"] },
+    ]
+  },
+  {
+    categoria: "Sonografía / Ecografía",
+    servicios: [
+      { nombre: "Sonografía / Ecografía a domicilio", codigo: "SONO", descripcion: "Ecografía portátil. Abdominal, pélvica, renal, partes blandas.", preguntar: ["¿Qué tipo de sonografía necesita?", "¿Tiene indicación médica?", "¿Está encamado?"] },
+    ]
+  },
+  {
+    categoria: "Doppler Vascular",
+    servicios: [
+      { nombre: "Doppler vascular", codigo: "DOP", descripcion: "Doppler arterial, venoso, carotídeo y de extremidades.", preguntar: ["¿Qué área evaluar?", "¿Motivo del estudio? (dolor, hinchazón, várices)", "¿Tiene indicación médica?"] },
+    ]
+  },
+  {
+    categoria: "Estudios Cardíacos",
+    servicios: [
+      { nombre: "Electrocardiograma (ECG)", codigo: "ECG", descripcion: "Registro de actividad eléctrica del corazón. Resultados inmediatos.", preguntar: ["¿Dolor en el pecho?", "¿Palpitaciones?", "¿Tiene indicación médica?"] },
+      { nombre: "Ecocardiograma", codigo: "ECO", descripcion: "Evaluación de estructura y función cardíaca por ultrasonido.", preguntar: ["¿Problemas cardíacos conocidos?", "¿Tiene indicación médica?", "¿Síntomas: falta de aire, dolor en pecho?"] },
+      { nombre: "Holter (ritmo cardíaco 24h)", codigo: "HOL", descripcion: "Monitoreo continuo del ritmo cardíaco por 24 horas.", preguntar: ["¿Síntomas: palpitaciones, mareos, desmayos?", "¿Tiene indicación médica?"] },
+      { nombre: "MAPA (presión arterial 24h)", codigo: "MAPA", descripcion: "Monitoreo ambulatorio de presión arterial por 24 horas.", preguntar: ["¿Diagnóstico de hipertensión?", "¿Toma medicamentos para presión?", "¿Tiene indicación médica?"] },
+    ]
+  },
+  {
+    categoria: "Laboratorio",
+    servicios: [
+      { nombre: "Laboratorio clínico a domicilio", codigo: "LAB", descripcion: "Toma de muestras y procesamiento en laboratorio aliado. Resultados 24-48h.", preguntar: ["¿Qué exámenes necesita?", "¿Tiene orden médica?", "¿Dónde procesamos las muestras?"] },
+    ]
+  },
+  {
+    categoria: "Hospitalización Domiciliaria",
+    servicios: [
+      { nombre: "Internamiento en casa", codigo: "HOS", descripcion: "Hospitalización domiciliaria con atención médica y enfermería continua.", preguntar: ["¿Diagnóstico y estado actual?", "¿Nivel de atención? (enfermería 4h, 8h, 12h, 24h)", "¿Tiene médico tratante y cuidador familiar?", "¿Qué medicamentos o equipos necesita?", "¿Tiene seguro médico?"] },
+    ]
+  },
+  {
+    categoria: "Hemohogar (Transfusiones)",
+    servicios: [
+      { nombre: "Transfusión domiciliaria (Hemohogar)", codigo: "HEMO", descripcion: "Transfusión de sangre y hemoderivados en domicilio o clínica. Supervisión médica.", preguntar: ["¿Dónde se realiza? (domicilio o clínica)", "¿Tiene indicación médica y hemograma reciente?", "¿Sangre autorizada por Banco de Sangre?", "¿Pruebas cruzadas realizadas?", "¿Cuenta con cuidador responsable presente?"] },
+    ]
+  },
+  {
+    categoria: "Oncomejórate (Quimioterapia)",
+    servicios: [
+      { nombre: "Quimioterapia en casa", codigo: "QUIMIO", descripcion: "Quimioterapia, inmunoterapia y terapias biológicas. Supervisión especializada.", preguntar: ["¿Dónde se realiza? (domicilio o clínica)", "¿Diagnóstico oncológico y protocolo?", "¿Tiene acceso venoso central? (PICC, port-a-cath)", "Médico oncólogo tratante"] },
+    ]
+  },
+  {
+    categoria: "Terapias",
+    servicios: [
+      { nombre: "Terapia física / Rehabilitación", codigo: "TF", descripcion: "Terapia física y rehabilitación a domicilio.", preguntar: ["¿Condición o diagnóstico?", "¿Limitación funcional?", "¿Cirugía reciente?", "¿Frecuencia deseada? (veces por semana)"] },
+      { nombre: "Antibioterapia en casa", codigo: "ANT", descripcion: "Antibióticos intravenosos en domicilio.", preguntar: ["¿Qué antibiótico?", "¿Dosis y frecuencia?", "¿Tiene acceso venoso?", "Diagnóstico de la infección"] },
+      { nombre: "Planes nutricionales", codigo: "NUTRI", descripcion: "Evaluación y planes nutricionales personalizados.", preguntar: ["Condición de salud", "¿Requiere nutrición enteral? (sonda)", "¿Alergias alimentarias?"] },
+      { nombre: "Odontología a domicilio", codigo: "ODONTO", descripcion: "Evaluación, limpieza, extracciones y procedimientos menores.", preguntar: ["Motivo de consulta", "¿Dolor o molestia específica?", "¿Condiciones de salud preexistentes?"] },
+    ]
+  },
+  {
+    categoria: "Programas Especiales",
+    servicios: [
+      { nombre: "Programa Adulto Mayor", codigo: "AM", descripcion: "Evaluación geriátrica, seguimiento médico y de enfermería.", preguntar: ["Nombre del paciente", "Edad", "Condiciones de salud actuales", "¿Vive solo o acompañado?", "¿Requiere enfermería?"] },
+      { nombre: "Cuidados paliativos neurológicos", codigo: "CPN", descripcion: "Para pacientes con ACV, Parkinson, Alzheimer, ELA.", preguntar: ["Diagnóstico específico", "Estado actual (encamado, movilidad)", "¿Tiene sonda, úlceras, dificultad para tragar?", "Nombre del cuidador principal"] },
+      { nombre: "Cuidadora domiciliaria", codigo: "CUIDA", descripcion: "Compañía y asistencia básica para adultos mayores.", preguntar: ["Nombre del paciente", "Edad", "¿Requiere asistencia para comer, bañarse, movilizarse?", "¿Horas diarias requeridas?"] },
+      { nombre: "Acompañamiento a citas médicas", codigo: "ACOMP", descripcion: "Traslado y acompañamiento a citas.", preguntar: ["Nombre del paciente", "Dirección de la cita", "Fecha y hora", "¿Requiere silla de ruedas?"] },
+    ]
+  },
+  {
+    categoria: "Programas Empresariales",
+    servicios: [
+      { nombre: "Programas empresariales", codigo: "EMP", descripcion: "Evaluaciones médicas, programas preventivos, jornadas, salud ocupacional.", preguntar: ["¿Qué tipo de programa necesita?", "Cantidad de empleados", "¿En sus instalaciones?", "Nombre de empresa, contacto, teléfono"] },
+    ]
+  }
+];
 
-export { servicios, faq, politicas, horarios, CATALOGO_COMPLETO };
+export const faq = [
+  { pregunta: "¿Cómo agendo una cita?", respuesta: "Puede agendar llamando al 809-636-3656 o enviando un WhatsApp al mismo número. También puede hacerlo a través de esta conversación. Necesitaremos: nombre completo, cédula, edad, dirección, teléfono y servicio requerido.", intencion: "agendar_cita" },
+  { pregunta: "¿Cuánto cuesta una consulta?", respuesta: "Consulta en clínica (primera vez y subsecuentes): RD$5,000. Consulta a domicilio y otros servicios: se cotizan personalizados según ubicación, materiales y personal. Un asesor se comunicará para darle la cotización.", intencion: "precio" },
+  { pregunta: "¿Qué seguros/ARS aceptan?", respuesta: "Tenemos convenio directo con Bupa, Meta Salud, APS, Monumental y Aetna La Colonia. Si su seguro no está en esa lista, podemos emitirle una carta y factura para que solicite reembolso a su aseguradora. ¿Qué seguro tiene?", intencion: "seguro" },
+  { pregunta: "¿Cuál es el horario de atención?", respuesta: "Clínica: lunes a viernes 8:00am-5:00pm, sábados 8:00am-12:00pm. Domicilio: lunes a viernes 8:00am-6:00pm, sábados disponibilidad limitada. Domingos no laboramos.", intencion: "horario" },
+  { pregunta: "¿Hacen visitas a domicilio?", respuesta: "Sí, todos nuestros servicios están disponibles a domicilio en Santo Domingo, Nagua, Terrenas, Santiago y zonas aledañas. Solo debe indicarnos su dirección.", intencion: "domicilio" },
+  { pregunta: "¿Qué zonas cubren?", respuesta: "Cubrimos Santo Domingo, Nagua, Terrenas, Santiago y zonas aledañas. Consúltenos por su ubicación específica.", intencion: "cobertura" },
+  { pregunta: "¿Cómo puedo pagar?", respuesta: "Aceptamos efectivo, transferencia bancaria (BanReservas cuenta 9600601779, Unidolor SRL, RNC 131080219), tarjeta de débito/crédito y cheque. Pagos antes de las 4:00pm se procesan el mismo día.", intencion: "pago" },
+  { pregunta: "¿Entregan resultados de laboratorio?", respuesta: "Sí, se entregan en 24 a 48 horas después del servicio, vía WhatsApp y correo electrónico. También puede retirar físicamente en nuestra oficina.", intencion: "resultados" },
+  { pregunta: "¿Necesito orden médica para transfusión?", respuesta: "Sí. Requisitos: indicación médica, hemograma reciente, sangre autorizada por el Banco de Sangre, pruebas cruzadas realizadas, y un cuidador responsable presente durante todo el procedimiento.", intencion: "transfusion" },
+  { pregunta: "¿Necesito orden médica para rayos X?", respuesta: "Sí, para Rayos X a domicilio se requiere indicación médica. Solo necesitamos la orden y sus datos para coordinar la visita.", intencion: "rayosx" },
+  { pregunta: "¿Qué son los cuidados paliativos?", respuesta: "Atención médica especializada para pacientes con enfermedades graves o terminales. El objetivo es controlar el dolor y mejorar la calidad de vida del paciente y su familia.", intencion: "paliativos" },
+  { pregunta: "¿Dónde están ubicados?", respuesta: "Estamos en Ave. Gustavo Mejía Ricart No.54, Torre Solazar, Piso 3, Local 3F, Ensanche Naco, Santo Domingo.", intencion: "ubicacion" },
+  { pregunta: "¿Puedo cancelar o reprogramar?", respuesta: "No ofrecemos reembolsos. Al cancelar o cambiar un servicio, se otorga un crédito por el monto pagado, utilizable exclusivamente para futuros servicios dentro de los siguientes 6 meses. Para servicios continuos (ej. enfermería 24/7) se requiere aviso con al menos 1 mes de anticipación. Se sugiere cancelar con la mayor antelación posible.", intencion: "cancelacion" },
+  { pregunta: "¿Me devuelven el dinero?", respuesta: "No ofrecemos reembolsos en efectivo. En su lugar, proporcionamos un crédito por el monto pagado, utilizable exclusivamente para futuros servicios dentro de los siguientes 6 meses.", intencion: "reembolso" },
+  { pregunta: "¿Puedo dejar el dinero en fondo o como balance?", respuesta: "Sí. Al cancelar, el monto se convierte en crédito para futuros servicios, válido por 6 meses. No hay reembolsos en efectivo.", intencion: "balance_favor" },
+  { pregunta: "¿Cómo reprogramo una cita?", respuesta: "Puede reprogramar su cita contactándonos. Cancelaremos la cita original y le ofreceremos nuevos horarios disponibles. Se sugiere reprogramar con mínimo 24 horas de antelación.", intencion: "reprogramacion" },
+  { pregunta: "¿Qué servicios de enfermería ofrecen?", respuesta: "Enfermería profesional en domicilio. Según la necesidad puede incluir curaciones, canalización venosa, aplicación de medicamentos, nebulizaciones, sondas, sueros, extracción de muestras y toma de signos vitales. Modalidades desde 4h hasta 24h.", intencion: "enfermeria" },
+  { pregunta: "¿Ofrecen terapia física?", respuesta: "Sí, contamos con terapia física y rehabilitación a domicilio. El fisioterapeuta visita al paciente, evalúa su condición y realiza el tratamiento según sus necesidades.", intencion: "terapia" },
+  { pregunta: "¿Qué necesito para agendar?", respuesta: "Nombre completo del paciente, cédula, edad, dirección exacta con referencia, teléfono de contacto, seguro médico (si tiene), y el servicio que necesita.", intencion: "requisitos" },
+  { pregunta: "¿Atienden emergencias?", respuesta: "No somos un servicio de emergencias 24h. Si es una emergencia (dolor intenso, sangrado, dificultad para respirar, pérdida de conciencia), acuda a la sala de urgencias más cercana o llame al 911.", intencion: "emergencia" },
+  { pregunta: "¿Cuánto dura la consulta?", respuesta: "La consulta médica a domicilio suele durar entre 30 y 60 minutos, dependiendo de la complejidad del caso.", intencion: "duracion" },
+  { pregunta: "¿Necesito preparación para sonografía?", respuesta: "Depende del tipo: sonografía abdominal requiere ayuno 6-8h; sonografía pélvica requiere vejiga llena (tomar agua y no orinar); renal no requiere preparación especial.", intencion: "sonografia_prep" },
+  { pregunta: "¿Cómo consigo una receta controlada?", respuesta: "Envíe un WhatsApp al 809-636-3656 con foto de la cédula del beneficiario y especificando el medicamento. Si el paciente fue visto hace más de 3 meses, debe realizar una nueva consulta.", intencion: "receta" },
+  { pregunta: "¿Realizan hospitalización en casa?", respuesta: "Sí, ofrecemos internamiento en casa con atención médica y de enfermería continua. Modalidades desde 4h hasta 24h, incluyendo hospitalización domiciliaria completa.", intencion: "hospitalizacion" },
+  { pregunta: "¿Ofrecen quimioterapia a domicilio?", respuesta: "Sí, a través de nuestro programa Oncomejórate®. Administramos quimioterapia, inmunoterapia y terapias biológicas en domicilio o clínica con supervisión especializada.", intencion: "quimioterapia" },
+  { pregunta: "¿Tienen planes para empresas?", respuesta: "Sí, ofrecemos programas empresariales: evaluaciones médicas, jornadas de salud, salud ocupacional, ergonomía y charlas. Consulte para más información.", intencion: "empresarial" },
+  { pregunta: "¿Cómo pido una factura?", respuesta: "La facturación se gestiona por el departamento de Contabilidad. Un asesor se comunicará con usted para enviar la factura o recibo correspondiente.", intencion: "factura" },
+  { pregunta: "¿Cómo agendar por Nimbo?", respuesta: "Las citas se gestionan a través del chatbot o un asesor humano. No es necesario acceder directamente a la plataforma Nimbo.", intencion: "nimbo" },
+  { pregunta: "¿Quién maneja la contabilidad?", respuesta: "El departamento de Contabilidad gestiona facturas y pagos. Un asesor derivará su consulta al área correspondiente.", intencion: "contabilidad" },
+  { pregunta: "¿Cómo contacto a RRHH?", respuesta: "RRHH (Yolanda Del Rosario) gestiona temas de personal y empleo. Un asesor derivará su consulta al área correspondiente.", intencion: "rrhh" },
+  { pregunta: "¿Dra. Bethania atiende fines de semana?", respuesta: "Dra. Bethania Martínez atiende miércoles y jueves de 8:00am a 6:00pm en Santo Domingo (Torre Solazar). Para otras fechas, consulte disponibilidad.", intencion: "doctor" },
+];
+
+export const politicas = {
+  pago: { metodo: "Efectivo, transferencia bancaria, tarjeta (débito/crédito), cheque", cuenta: "9600601779", banco: "Banco de Reservas", titular: "Unidolor SRL", tipo: "Cuenta Corriente", rnc: "131080219" },
+  programacion: { plazo: "24 a 48 horas después de confirmación", corte_diario: "4:00 pm", detalle: "Pagos antes de las 4:00 pm se procesan para programación del día siguiente." },
+  resultados: { plazo: "24 a 48 horas", envio: "WhatsApp y correo electrónico", retiro_fisico: "Ave. Gustavo Mejía Ricart No.54, Torre Solazar, Piso 3, Local 3F" },
+  cancelacion: { politica: "No ofrecemos reembolsos en efectivo. En su lugar, proporcionamos un crédito por el monto pagado, el cual podrá ser utilizado exclusivamente para futuros servicios dentro de los siguientes 6 meses. Para servicios continuos (ej. enfermería 24/7) se requiere aviso con al menos 1 mes de anticipación.", cotizacion_vigencia: "15 días" },
+  oficinas: ["Ave. Gustavo Mejía Ricart No.54, Torre Solazar, Piso 3, Local 3F, Ensanche Naco"]
+};
+
+export const horarios = {
+  clinica: { lunes_a_viernes: "8:00am - 5:00pm", sabado: "8:00am - 12:00pm", domingo: "Cerrado" },
+  domicilio: { lunes_a_viernes: "8:00am - 6:00pm", sabado: "Disponibilidad limitada", domingo: "No laboramos" },
+  corte_pago: "4:00 pm",
+  programacion_servicios: "24 a 48 horas",
+  entrega_resultados: "24 a 48 horas",
+  zonas_cobertura: ["Santo Domingo", "Nagua", "Terrenas", "Santiago", "Zonas aledañas"],
+  contactos: {
+    telefonos: ["809-636-3656", "829-263-4143"],
+    emails: ["info@unidolor.com.do", "info@mejorateencasa.com"],
+    websites: ["www.unidolor.com.do", "www.mejorateencasa.com"],
+  }
+};
 
 export const CHUNKS_EJEMPLOS = [
   'Cliente: Buenas tardes, ¿hacen visita a domicilio?\nAsistente: Sí, en Santo Domingo, Nagua, Terrenas y Santiago. ¿Su dirección?',
@@ -114,6 +285,18 @@ export function detectFields(userMessages) {
   const fields = { nombre: null, cedula: null, servicio: null, servicioLabel: null, direccion: null, telefono: null, seguro: null, afiliado: null, email: null, fecha_nacimiento: null, genero: null, sucursal: null, notas: null, requisitos: null, caller_name: null, caller_phone: null, patient_name: null, patient_phone: null, relationship: null };
   if (!userMessages) return fields;
 
+  // Nombre aceptable = no es dirección, empresa, teléfono, cédula ni cadena vacía/numérica
+  const isName = (value) => {
+    if (!value) return null;
+    const v = String(value).trim();
+    if (!v || v.length < 3 || v.length > 60) return null;
+    if (/^\d+$/.test(v)) return null;
+    if (/^\d{3}[\s.-]?\d{7}[\s.-]?\d$/.test(v)) return null;
+    if (/^(calle|av\.|avenida|avda|torre|torres|edificio|edif\.|sector|ensanche|apartamento|apto|apt\.|residencial|urbanizaci|plaza|centro|carretera|km|no\.|#)\b/i.test(v) || /^\d/.test(v)) return null;
+    if (/\b(banco|seguro|ars|humano|universal|popular|reservas|central|humana|mapfre|palic|senasa|bupa|monumental|metasalud|metal salud|colonial)\b/i.test(v)) return null;
+    return v;
+  };
+
   for (const msg of userMessages) {
     if (!msg) continue;
     const t = msg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -149,11 +332,16 @@ export function detectFields(userMessages) {
     if (!fields.nombre) {
       const intro = msg.match(/(?:me llamo|mi nombre es|soy|llámame|me dicen)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)/i);
       if (intro) {
-        fields.nombre = intro[1];
+        const n = isName(intro[1]);
+        if (n) fields.nombre = n;
       } else if (fields.cedula) {
         const antes = msg.replace(new RegExp(fields.cedula.replace(/[-.]/g, '\\$&'), 'g'), '').trim();
         const caps = antes.split(/\s+/).filter(w => /^[A-ZÁÉÍÓÚÑ]/.test(w));
-        if (caps.length >= 2) fields.nombre = caps.join(' ');
+        if (caps.length >= 2) {
+          const candidato = caps.slice(0, 3).join(' ');
+          const n = isName(candidato);
+          if (n) fields.nombre = n;
+        }
       }
     }
     // Catch "Le habla la Sra/Nombre", "Y quien le habla...", "Nombre tel X", etc.
@@ -161,16 +349,23 @@ export function detectFields(userMessages) {
       // Pattern: "Le habla la Sra Magaly Díaz", "Y quien le habla su esposa Sra Magaly Díaz"
       const spoken = msg.match(/(?:le\s+habla|y\s+quien\s+le\s+habla|es|soy)\s+(?:la\s+)?(?:su\s+(?:esposa|esposo)\s+)?(?:sra?\.?|sr?\.?|don|doña)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?(?:\s|$|,|\.|;)/i);
       if (spoken) {
-        fields.nombre = spoken[1];
+        const n = isName(spoken[1]);
+        if (n) fields.nombre = n;
       } else {
         const relative = msg.match(/(?:mi\s+(?:esposa|esposo|madre|padre|hijo|hija|familiar)\s+(?:es|se\s+llama))\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?(?:\s|$|,|\.|;)/i);
-        if (relative) fields.nombre = relative[1];
+        if (relative) {
+          const n = isName(relative[1]);
+          if (n) fields.nombre = n;
+        }
       }
     }
     // Pattern: "Magaly Díaz 809-7080241" - name followed by phone at start of message
     if (!fields.nombre && fields.telefono) {
       const namePhone = msg.match(/^([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?\s+\d/);
-      if (namePhone) fields.nombre = namePhone[1];
+      if (namePhone) {
+        const n = isName(namePhone[1]);
+        if (n) fields.nombre = n;
+      }
     }
     if (!fields.seguro && /(?:seguro|ars\b|universal|humano|mapfre|palic|senasa|banco central|futuro|renacer|simag|metal salud|sib\b|monumental|bupa|colonial|aetna|aps\b)/i.test(msg)) {
       const seg = msg.match(/(?:seguro|ars)\s*(?:de\s+)?\s*[:\-]?\s*([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ\s]*?)(?:\s*(?:afiliado|nro|numero|con\s+afiliado|,\s*afiliado)|$)/i);
@@ -207,9 +402,11 @@ export function detectFields(userMessages) {
         // Nombre del paciente tras el parentesco (captura sensible a mayúsculas)
         const afterRel = msg.match(new RegExp('(?:esposo|esposa|madre|padre|hijo|hija|abuela|abuelo|hermano|hermana|t[ií]o|t[ií]a|familiar|paciente|nieto|nieta|sobrino|sobrina)(?:\\s+(?:que\\s+)?(?:se\\s+llama|llamado|llamada))?\\s+(?:(?:el|la)\\s+)?(?:(?:sr\\.?|sra\\.?|don|do[ñn]a|lic\\.?|dr\\.?|dra\\.?)\\s+)?([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3})'));
         if (afterRel) {
-          fields.patient_name = afterRel[1]
+          const candidato = afterRel[1]
             .replace(/^(?:el|la|sr\.?|sra\.?|don|do[ñn]a|lic\.?|dr\.?|dra\.?)\s+/i, '')
             .trim();
+          const n = isName(candidato);
+          if (n) fields.patient_name = n;
         }
       }
     }
@@ -224,6 +421,10 @@ export function detectFields(userMessages) {
         fields.servicioLabel = SERVICE_CODE_LABEL[code] || code;
       }
     }
+  }
+  // Si no se capturó nombre pero sí paciente (agendan para otra persona), promoverlo
+  if (!fields.nombre && fields.patient_name) {
+    fields.nombre = fields.patient_name;
   }
   return fields;
 }
