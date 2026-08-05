@@ -1865,7 +1865,7 @@ setInterval(loadList,30000);
 }
 
 const CONV_INDEX_KEY = 'convindex:v1';
-const CONV_INDEX_TTL = 6 * 60 * 1000;
+const CONV_INDEX_TTL = 10 * 60 * 1000;
 
 function decorateMessages(msgs) {
   return msgs.map((h) => ({

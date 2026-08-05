@@ -3,7 +3,6 @@ packages:
   - "apps/crm/backend"
   - "apps/crm/frontend"
   - "apps/chatbot"
-  - "scripts"
 
 allowBuilds:
   esbuild: true
