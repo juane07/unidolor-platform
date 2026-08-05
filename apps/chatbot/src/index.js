@@ -112,6 +112,14 @@ export default {
         if (!checkAdminKey(url, env)) return denyAdmin();
         return fixConversationNames(env);
       }
+      if (url.pathname === '/api/fix-encoding') {
+        if (!checkAdminKey(url, env)) return denyAdmin();
+        return fixEncoding(env);
+      }
+      if (url.pathname === '/api/cleanup-keys') {
+        if (!checkAdminKey(url, env)) return denyAdmin();
+        return cleanupKeys(env);
+      }
       if (url.searchParams.has('hub.mode')) {
         return handleWebhookVerification(request, env);
       }
@@ -1252,6 +1260,174 @@ async function fixConversationNames(env) {
   });
 }
 
+// Re-escribe las keys de conversación con codificación UTF-8 limpia para corregir
+// mojibake (texto guardado con bytes Latin-1 que rompen los acentos).
+async function fixEncoding(env) {
+  if (!env.SEGUIMIENTO) {
+    return new Response(JSON.stringify({ error: 'KV no configurado' }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+  const kv = env.SEGUIMIENTO;
+  const MAX_KEYS = 5000;
+  const results = { conv: 0, msgh: 0, forms: 0, errors: [] };
+
+  function fixString(str) {
+    if (typeof str !== 'string' || !/[^\u0000-\u007F]/.test(str)) return str;
+    // Si ya tiene caracteres latinos válidos (acentos normales), no tocar.
+    if (/[áéíóúñÁÉÍÓÚÑ¿¡]/.test(str) && !/\uFFFD/.test(str)) return str;
+    // Re-encode: bytes mal interpretados como Latin-1 -> UTF-8.
+    try {
+      const fixed = decodeURIComponent(escape(str));
+      return fixed;
+    } catch {
+      return str;
+    }
+  }
+
+  function fixObject(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    for (const k of Object.keys(obj)) {
+      if (typeof obj[k] === 'string') {
+        obj[k] = fixString(obj[k]);
+      } else if (Array.isArray(obj[k])) {
+        obj[k] = obj[k].map((item) => (typeof item === 'string' ? fixString(item) : fixObject(item)));
+      } else if (obj[k] && typeof obj[k] === 'object') {
+        obj[k] = fixObject(obj[k]);
+      }
+    }
+    return obj;
+  }
+
+  try {
+    // Keys conv:*
+    let cursor;
+    do {
+      const res = await kv.list({ prefix: 'conv:', limit: 1000, cursor });
+      for (const key of res.keys) {
+        const data = await kv.get(key.name, 'json');
+        if (!data) continue;
+        const fixed = fixObject(JSON.parse(JSON.stringify(data)));
+        const original = JSON.stringify(data);
+        const reencoded = JSON.stringify(fixed);
+        if (original !== reencoded) {
+          await kv.put(key.name, reencoded, { expirationTtl: 604800 });
+          results.conv++;
+        }
+      }
+      cursor = res.cursor;
+      if (results.conv > MAX_KEYS) break;
+    } while (cursor);
+
+    // Keys msgh:*
+    cursor = null;
+    do {
+      const res = await kv.list({ prefix: 'msgh:', limit: 1000, cursor });
+      for (const key of res.keys) {
+        const data = await kv.get(key.name, 'json');
+        if (!data) continue;
+        const fixed = fixObject(JSON.parse(JSON.stringify(data)));
+        const original = JSON.stringify(data);
+        const reencoded = JSON.stringify(fixed);
+        if (original !== reencoded) {
+          await kv.put(key.name, reencoded, { expirationTtl: 86400 });
+          results.msgh++;
+        }
+      }
+      cursor = res.cursor;
+      if (results.msgh > MAX_KEYS) break;
+    } while (cursor);
+
+    // Keys form:*
+    cursor = null;
+    do {
+      const res = await kv.list({ prefix: 'form:', limit: 1000, cursor });
+      for (const key of res.keys) {
+        const data = await kv.get(key.name, 'json');
+        if (!data) continue;
+        const fixed = fixObject(JSON.parse(JSON.stringify(data)));
+        const original = JSON.stringify(data);
+        const reencoded = JSON.stringify(fixed);
+        if (original !== reencoded) {
+          await kv.put(key.name, reencoded);
+          results.forms++;
+        }
+      }
+      cursor = res.cursor;
+      if (results.forms > MAX_KEYS) break;
+    } while (cursor);
+
+    await kv.delete('cache:conv-list');
+    return new Response(JSON.stringify(results), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message, ...results }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+}
+
+// Borra keys basura: conv: sin phone, conv:chat-web, y cache de lista.
+async function cleanupKeys(env) {
+  if (!env.SEGUIMIENTO) {
+    return new Response(JSON.stringify({ error: 'KV no configurado' }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+  const kv = env.SEGUIMIENTO;
+  const results = { conv: 0, msgh: 0, cache: 0, errors: [] };
+
+  try {
+    let cursor;
+    do {
+      const res = await kv.list({ prefix: 'conv:', limit: 1000, cursor });
+      for (const key of res.keys) {
+        const data = await kv.get(key.name, 'json');
+        if (!data) continue;
+        const p = data.phone || '';
+        if (!p || p === 'undefined' || p === 'chat-web') {
+          await kv.delete(key.name);
+          results.conv++;
+          continue;
+        }
+      }
+      cursor = res.cursor;
+    } while (cursor);
+
+    cursor = null;
+    do {
+      const res = await kv.list({ prefix: 'msgh:', limit: 1000, cursor });
+      for (const key of res.keys) {
+        const p = key.name.slice('msgh:'.length).split(':')[0];
+        if (!p || p === 'undefined' || p === 'chat-web') {
+          await kv.delete(key.name);
+          results.msgh++;
+        }
+      }
+      cursor = res.cursor;
+    } while (cursor);
+
+    cursor = null;
+    do {
+      const res = await kv.list({ prefix: 'cache:', limit: 1000, cursor });
+      for (const key of res.keys) {
+        await kv.delete(key.name);
+        results.cache++;
+      }
+      cursor = res.cursor;
+    } while (cursor);
+
+    return new Response(JSON.stringify(results), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message, ...results }), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    });
+  }
+}
+
 function serveAdmin(env) {
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -1514,7 +1690,7 @@ function formatPhone(phone) {
       });
       
       div.innerHTML=list.map(c=>{
-        const last=c.messages&&c.messages.length>0?c.messages[c.messages.length-1]:{};
+        const last=c.lastMessage||{};
         const pre=last.content?last.content.substring(0,80):'';
         const time=c.updatedAt?new Date(c.updatedAt).toLocaleString('es-DO',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
         const displayName = c.name ? c.name : formatPhone(c.phone);
@@ -1550,124 +1726,128 @@ async function serveConversationsJSON(env, url) {
     });
   }
   try {
+    const kv = env.SEGUIMIENTO;
     const phone = url.searchParams.get('phone');
     const serviceFilter = url.searchParams.get('service'); // filter by service
-    
-    // Get all forms to map phone -> service
-    const formList = await env.SEGUIMIENTO.list({ prefix: 'form:' });
-    const phoneToService = new Map();
-    for (const key of formList.keys) {
-      const data = await env.SEGUIMIENTO.get(key.name, 'json');
-      if (data && data.phone && data.servicio) {
-        const label = getFormServicioLabel(data.servicio) || data.servicio;
-        phoneToService.set(data.phone, label);
+
+    // Lectura paralela en lotes para no disparar el límite de subrequests y ser rápido.
+    async function getMany(keys, batch = 20) {
+      const out = [];
+      for (let i = 0; i < keys.length; i += batch) {
+        const chunk = keys.slice(i, i + batch);
+        const vals = await Promise.all(chunk.map((k) => kv.get(k, 'json').catch(() => null)));
+        out.push(...vals);
       }
+      return out;
     }
 
+    // Vista de conversación individual: solo carga los mensajes de esa conversa.
     if (phone) {
-      let data = await env.SEGUIMIENTO.get(`conv:${phone}`, 'json');
-      const msgs = await loadMsgsFromKV(env.SEGUIMIENTO, phone);
+      const [data, msgs] = await Promise.all([kv.get(`conv:${phone}`, 'json'), loadMsgsFromKV(kv, phone)]);
       if (msgs.length > 0) {
         const mapped = msgs.map((h) => ({
           role: h.role === 'user' ? 'user' : 'bot',
           content: h.content,
           timestamp: new Date(h.ts || Date.now()).toISOString(),
         }));
-        data = {
+        const result = {
           phone,
           name: (data && data.name) || '',
-          service: phoneToService.get(phone) || '',
+          service: '',
           messages: mapped,
           messageCount: mapped.length,
           createdAt: new Date(msgs[0].ts || Date.now()).toISOString(),
           updatedAt: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString(),
         };
+        // service friendly label desde forms
+        const form = await kv.get(`form:latest:${phone}`, 'json');
+        if (form && form.servicio) result.service = getFormServicioLabel(form.servicio) || form.servicio;
+        return new Response(JSON.stringify(result), {
+          status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
       }
-      return new Response(JSON.stringify(data || { phone, messages: [], messageCount: 0 }), {
+      return new Response(JSON.stringify(data ? { phone, name: data.name || '', messages: [], messageCount: 0 } : { phone, messages: [], messageCount: 0 }), {
         status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
       });
     }
-    
-    const [convList, msgList, latestForms] = await Promise.all([
-      env.SEGUIMIENTO.list({ prefix: 'conv:' }),
-      env.SEGUIMIENTO.list({ prefix: 'msgh:' }),
-      env.SEGUIMIENTO.list({ prefix: 'form:latest:' }),
+
+    // VISTA DE LISTA — cache corta (20s) para que el polling de 5s del front no recalcule todo.
+    const CACHE_KEY = 'cache:conv-list';
+    const cached = await kv.get(CACHE_KEY, 'json');
+    if (cached && Array.isArray(cached.list)) {
+      let out = cached.list;
+      if (serviceFilter) out = out.filter((c) => c.service && c.service.toLowerCase().includes(serviceFilter.toLowerCase()));
+      return new Response(JSON.stringify(out), {
+        status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+      });
+    }
+
+    const [convList, latestForms] = await Promise.all([
+      kv.list({ prefix: 'conv:' }),
+      kv.list({ prefix: 'form:latest:' }),
     ]);
-    
-    // Build form name map for fallback
+
+    // Mapa phone -> form (nombre + servicio)
     const formNameMap = new Map();
-    for (const key of latestForms.keys) {
-      const data = await env.SEGUIMIENTO.get(key.name, 'json');
-      if (data && data.phone && data.nombre) {
-        formNameMap.set(data.phone, data.nombre);
-      }
+    const phoneToService = new Map();
+    const formVals = await getMany(latestForms.keys.map((k) => k.name));
+    for (const data of formVals) {
+      if (!data) continue;
+      if (data.phone && data.nombre) formNameMap.set(data.phone, data.nombre);
+      if (data.phone && data.servicio) phoneToService.set(data.phone, getFormServicioLabel(data.servicio) || data.servicio);
     }
-    const seen = new Set();
+
+    const convVals = await getMany(convList.keys.map((k) => k.name));
     const conversations = [];
-    for (const key of convList.keys) {
-      const data = await env.SEGUIMIENTO.get(key.name, 'json');
-      if (data) { 
-        // Add service from forms with friendly label
-        const rawService = phoneToService.get(data.phone) || '';
-        data.service = rawService;
-        // Fallback to form name if conversation name is empty
-        if (!data.name && formNameMap.has(data.phone)) {
-          data.name = formNameMap.get(data.phone);
-        }
-        // Load messages + count for conv-keyed conversations
-        const msgs = await loadMsgsFromKV(env.SEGUIMIENTO, data.phone);
-        if (msgs.length > 0) {
-          data.messages = msgs.map((h) => ({
-            role: h.role === 'user' ? 'user' : 'bot',
-            content: h.content,
-            timestamp: new Date(h.ts || Date.now()).toISOString(),
-          }));
-          data.messageCount = msgs.length;
-          data.updatedAt = new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString();
-        } else if (!data.messageCount) {
-          data.messageCount = Array.isArray(data.messages) ? data.messages.length : 0;
-        }
-        conversations.push(data); 
-        seen.add(data.phone); 
-      }
+    for (const data of convVals) {
+      if (!data) continue;
+      const p = data.phone || '';
+      if (!p || p === 'undefined' || p === 'chat-web') continue; // filtrar basura
+      // Para la lista NO cargamos todos los mensajes: usamos datos ya almacenados en conv:
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+      const last = messages.length > 0 ? messages[messages.length - 1] : null;
+      conversations.push({
+        phone: p,
+        name: data.name || formNameMap.get(p) || '',
+        service: phoneToService.get(p) || '', // formNameMap/phoneToService
+        messageCount: typeof data.messageCount === 'number' ? data.messageCount : messages.length,
+        lastMessage: last ? { role: last.role, content: last.content, timestamp: last.timestamp } : null,
+        updatedAt: data.updatedAt || (last && last.timestamp) || new Date().toISOString(),
+      });
     }
+
+    // Conversation keys que no quedaron en conv: (solo de msgh:) — por teléfono válido
+    const knownPhones = new Set(conversations.map((c) => c.phone));
+    const msgList = await kv.list({ prefix: 'msgh:' });
     const byPhone = new Map();
     for (const key of msgList.keys) {
       const p = key.name.slice('msgh:'.length).split(':')[0];
-      if (seen.has(p)) continue;
+      if (!p || p === 'undefined' || p === 'chat-web' || knownPhones.has(p)) continue;
       if (!byPhone.has(p)) byPhone.set(p, []);
       byPhone.get(p).push(key.name);
     }
     for (const [p, keys] of byPhone) {
-      const msgs = [];
-      for (const k of keys) {
-        const v = await env.SEGUIMIENTO.get(k, 'json');
-        if (v && v.role) msgs.push(v);
-      }
-      msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      const vals = await getMany(keys);
+      const msgs = vals.filter((v) => v && v.role).sort((a, b) => (a.ts || 0) - (b.ts || 0));
       if (msgs.length === 0) continue;
       conversations.push({
         phone: p,
         name: formNameMap.get(p) || '',
         service: phoneToService.get(p) || '',
-        messages: msgs.map((h) => ({
-          role: h.role === 'user' ? 'user' : 'bot',
-          content: h.content,
-          timestamp: new Date(h.ts || Date.now()).toISOString(),
-        })),
         messageCount: msgs.length,
-        createdAt: new Date(msgs[0].ts || Date.now()).toISOString(),
+        lastMessage: msgs[msgs.length - 1] ? { role: msgs[msgs.length - 1].role, content: msgs[msgs.length - 1].content, timestamp: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString() } : null,
         updatedAt: new Date(msgs[msgs.length - 1].ts || Date.now()).toISOString(),
       });
     }
-    
-    // Filter by service if requested
+
+    // Ordenar por última actividad y aplicar filtro
+    conversations.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
     let filtered = conversations;
-    if (serviceFilter) {
-      filtered = conversations.filter(c => c.service && c.service.toLowerCase().includes(serviceFilter.toLowerCase()));
-    }
-    
-    filtered.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+    if (serviceFilter) filtered = filtered.filter((c) => c.service && c.service.toLowerCase().includes(serviceFilter.toLowerCase()));
+
+    // Escribir cache
+    try { await kv.put(CACHE_KEY, JSON.stringify({ generated: new Date().toISOString(), list: conversations }), { expirationTtl: 20 }); } catch {}
+
     return new Response(JSON.stringify(filtered), {
       status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
     });
@@ -1681,9 +1861,12 @@ async function serveConversationsJSON(env, url) {
 async function loadMsgsFromKV(kv, phone) {
   const list = await kv.list({ prefix: `msgh:${phone}:` });
   const msgs = [];
-  for (const key of list.keys) {
-    const v = await kv.get(key.name, 'json');
-    if (v && v.role) msgs.push(v);
+  for (let i = 0; i < list.keys.length; i += 20) {
+    const chunk = list.keys.slice(i, i + 20);
+    const vals = await Promise.all(chunk.map((key) => kv.get(key.name, 'json').catch(() => null)));
+    for (const v of vals) {
+      if (v && v.role) msgs.push(v);
+    }
   }
   msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
   return msgs;
