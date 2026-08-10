@@ -65,7 +65,10 @@ export function createBot(env) {
 
     const currentState = getConvState(from);
     const hasAppointmentIntent = appointmentKeywords.test(text);
-    const skipCache = currentState.awaitingAppointment || hasAppointmentIntent;
+    // No usar cache cuando hay un flujo interactivo activo (fotos/números/citas):
+    // de lo contrario una respuesta cacheada ("Falta enviar foto...") se devuelve
+    // para siempre sin procesar el estado ni los timeouts.
+    const skipCache = currentState.awaitingAppointment || currentState.awaitingImages || currentState.awaitingAfiliado || currentState.awaitingCancelConfirmation || currentState.awaitingRescheduleDate || hasAppointmentIntent;
 
     if (!skipCache) {
       const cached = await getCachedReply(text, kv);
@@ -939,6 +942,22 @@ export function createBot(env) {
       return { reply: msg, type: faltanFotos.length ? 'awaiting_images' : 'awaiting_afiliado' };
     }
 
+    // Timeout de imágenes: se chequea ANTES de responder "falta enviar foto" para que
+    // un usuario que dejó la conversación no quede atrapado pidiendo fotos para siempre.
+    // También cubre estados persistidos sin imagesTimeoutAt válido (>= CONV_TIMEOUT de antigüedad).
+    const imgStale = state.awaitingImages && (!state.imagesTimeoutAt || Date.now() > state.imagesTimeoutAt);
+    if (imgStale) {
+      clearImagesState(from);
+      // Limpiar también los datos del formulario acumulados en una sesión previa:
+      // si no, detectFields reconstruye los datos desde el historial y reactiva
+      // el flujo de fotos en cada mensaje sin importar el timeout.
+      state.formData = {};
+      addToHistory(from, 'user', text);
+      addToHistory(from, 'assistant', 'Puede continuar. Si aún necesita el servicio, le tomamos los datos nuevamente.');
+      await saveConvHistory(from, kv);
+      return { reply: 'Puede continuar. Si aún necesita el servicio, le tomamos los datos nuevamente.', type: 'images_timeout' };
+    }
+
     // Si el usuario escribió un número faltante mientras esperamos fotos, capturarlo
     if (state.awaitingImages) {
       const update = {};
@@ -957,17 +976,6 @@ export function createBot(env) {
         await saveConvHistory(from, kv);
         return { reply: msg, type: 'awaiting_images' };
       }
-    }
-
-    // Timeout de imágenes
-    if (state.awaitingImages && state.imagesTimeoutAt && Date.now() > state.imagesTimeoutAt) {
-      clearImagesState(from);
-      const msg = 'Tiempo agotado para enviar fotos. Puede reenviarlas cuando quiera o continuar sin ellas.';
-      addToHistory(from, 'user', text);
-      addToHistory(from, 'assistant', msg);
-      if (!isTest) await setCachedReply(text, msg, kv);
-      await saveConvHistory(from, kv);
-      return { reply: msg, type: 'images_timeout' };
     }
 
     addToHistory(from, 'user', text);

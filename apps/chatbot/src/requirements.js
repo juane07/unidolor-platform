@@ -15,25 +15,27 @@ export const REQUIRED_NUMBERS = {
   afiliado: { label: 'número de afiliado/seguro', hint: '000-000000' },
 };
 
-export function missingPhotos(receivedImages = {}) {
+export function missingPhotos(receivedImages) {
+  receivedImages = receivedImages || {};
   const missing = [];
   if (!receivedImages.cedula && !receivedImages.ambos) missing.push('cedula');
   if (!receivedImages.seguro && !receivedImages.ambos) missing.push('seguro');
   return missing;
 }
 
-export function missingNumbers(formData = {}) {
+export function missingNumbers(formData) {
+  formData = formData || {};
   const missing = [];
   if (!formData.cedula) missing.push('cedula');
   if (!formData.afiliado) missing.push('afiliado');
   return missing;
 }
 
-export function hasAllPhotos(receivedImages = {}) {
+export function hasAllPhotos(receivedImages) {
   return missingPhotos(receivedImages).length === 0;
 }
 
-export function hasAllNumbers(formData = {}) {
+export function hasAllNumbers(formData) {
   return missingNumbers(formData).length === 0;
 }
 
@@ -42,7 +44,7 @@ export function missingLabel(item) {
 }
 
 // Construye el mensaje unificado que debe pedir el bot
-export function buildRequirementsMessage(formData = {}, receivedImages = {}) {
+export function buildRequirementsMessage(formData, receivedImages) {
   const faltanFotos = missingPhotos(receivedImages);
   const faltanNumeros = missingNumbers(formData);
   if (faltanFotos.length === 0 && faltanNumeros.length === 0) return '';

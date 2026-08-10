@@ -391,7 +391,7 @@ async function serveReset(env) {
     const list = await env.SEGUIMIENTO.list();
     let deleted = 0;
     for (const key of list.keys) {
-      if (key.name.startsWith('msgh:') || key.name.startsWith('state:conv:') || key.name.startsWith('dedup:') || key.name.startsWith('cache:') || key.name.startsWith('form:') || key.name.startsWith('fu_')) {
+      if (key.name.startsWith('msgh:') || key.name.startsWith('state:conv:') || key.name.startsWith('conv:') || key.name.startsWith('dedup:') || key.name.startsWith('cache:') || key.name.startsWith('form:') || key.name.startsWith('fu_')) {
         await env.SEGUIMIENTO.delete(key.name);
         deleted++;
       }
