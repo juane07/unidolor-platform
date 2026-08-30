@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "git"]
+nixPkgs = ["nodejs_20", "git", "pnpm"]
 
 [phases.install]
-cmds = ["cd frontend && npm install && npx vite build && cd ../backend && npm install"]
+cmds = ["cd apps/crm/frontend && pnpm install && pnpm run build && cd ../backend && pnpm install"]
 
 [start]
-cmd = "cd backend && node src/server.js"
+cmd = "cd apps/crm/backend && node src/server.js"
