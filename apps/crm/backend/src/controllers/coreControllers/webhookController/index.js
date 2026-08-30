@@ -178,4 +178,86 @@ const handleBotWebhook = async (req, res) => {
   });
 };
 
-module.exports = { handleBotWebhook };
+/**
+ * handleCreateCase — Crea un Caso/Episodio desde el chatbot o formulario.
+ * Body esperado:
+ *   clientPhone, motivoContacto (tipo, descripcion, ubicacionDolor, intensidadDolor),
+ *   servicioCodigo, procedimientoCodigo, notes, source
+ */
+const handleCreateCase = async (req, res) => {
+  const WEBHOOK_API_KEY = process.env.WEBHOOK_API_KEY || 'unidolor-webhook-key-2026';
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey || apiKey !== WEBHOOK_API_KEY) {
+    return res.status(401).json({ success: false, message: 'Invalid API key' });
+  }
+
+  const {
+    clientPhone,
+    motivoContacto,
+    servicioCodigo,
+    procedimientoCodigo,
+    notes,
+    source,
+  } = req.body;
+
+  if (!clientPhone) {
+    return res.status(400).json({ success: false, message: 'clientPhone es obligatorio' });
+  }
+
+  const Client = mongoose.model('Client');
+  const CaseModel = mongoose.model('Case');
+  const Service = mongoose.model('Service');
+  const Notification = mongoose.model('Notification');
+
+  // Buscar cliente por teléfono
+  const client = await Client.findOne({ phone: clientPhone });
+  if (!client) {
+    return res.status(404).json({ success: false, message: 'Cliente no encontrado. Sincronice primero el cliente.' });
+  }
+
+  // Buscar servicio si se proporciona código
+  let servicioRef = null;
+  if (servicioCodigo) {
+    servicioRef = await Service.findOne({ cupsCode: servicioCodigo, removed: false });
+  }
+
+  // Crear el caso
+  const caseData = {
+    client: client._id,
+    motivoContacto: motivoContacto || {},
+    servicioCodigo: servicioCodigo || '',
+    servicioLabel: servicioRef ? servicioRef.name : servicioCodigo || '',
+    notes: notes ? [notes] : [],
+    source: source || 'whatsapp',
+    canalContacto: source === 'whatsapp' ? 'whatsapp_bot' : source === 'web' ? 'formulario_web' : 'otro',
+    status: 'abierto',
+  };
+
+  if (servicioRef) {
+    caseData.servicio = servicioRef._id;
+  }
+
+  if (procedimientoCodigo) {
+    caseData.procedimientoCodigo = procedimientoCodigo;
+  }
+
+  const newCase = await CaseModel.create(caseData);
+
+  // Notificación
+  await Notification.create({
+    type: 'new_case',
+    title: `Nuevo caso: ${newCase.caseNumber}`,
+    message: `${motivoContacto?.tipo || 'sin motivo'} — ${servicioCodigo || 'sin servicio asignado'}`,
+    link: '/pipeline',
+    modelId: newCase._id,
+  });
+
+  return res.status(201).json({
+    success: true,
+    caseId: newCase._id,
+    caseNumber: newCase.caseNumber,
+    status: newCase.status,
+  });
+};
+
+module.exports = { handleBotWebhook, handleCreateCase };

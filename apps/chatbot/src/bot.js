@@ -1,4 +1,4 @@
-import { cleanup, loadConvHistory, saveConvHistory, getHistory, addToHistory, getConvState, setFormData, getFormData, setAwaitingImages, addReceivedImage, clearImagesState, setAwaitingAppointment, addAppointmentSlot, checkAwaitingAppointment, clearAppointmentState, setAwaitingCancelConfirmation, getAwaitingCancelConfirmation, clearCancelConfirmation, setAwaitingRescheduleDate, getAwaitingRescheduleDate, clearRescheduleDate, setExtraction, getExtraction, setAwaitingAfiliado, clearAwaitingAfiliado } from './state.js';
+import { cleanup, loadConvHistory, saveConvHistory, getHistory, addToHistory, getConvState, setFormData, getFormData, setAwaitingImages, addReceivedImage, clearImagesState, setAwaitingAppointment, addAppointmentSlot, checkAwaitingAppointment, clearAppointmentState, setAwaitingCancelConfirmation, getAwaitingCancelConfirmation, clearCancelConfirmation, setAwaitingRescheduleDate, getAwaitingRescheduleDate, clearRescheduleDate, setExtraction, getExtraction, setAwaitingAfiliado, clearAwaitingAfiliado, setContactReason, getContactReason } from './state.js';
 import { detectUrgency, detectarIntencion } from './intent.js';
 import { getUrgentResponse, SITE_URL } from './knowledge.js';
 import { buildPrompt, buildReply, getPromptText } from './prompt.js';
@@ -6,7 +6,7 @@ import { callGemini, getCachedReply, setCachedReply } from './ai.js';
 import { getSectionForIntent, findService, getFormLink, detectFields } from './knowledge-data.js';
 import { missingPhotos, missingNumbers, buildRequirementsMessage } from './requirements.js';
 import { mergeExtractedData, inferDocumentType } from './images.js';
-import { checkAvailability, createAppointment, sendToCRM, getAppointmentsByClient, cancelAppointment, rescheduleAppointment, createOrUpdateClient, notifyBackoffice } from './crm.js';
+import { checkAvailability, createAppointment, sendToCRM, getAppointmentsByClient, cancelAppointment, rescheduleAppointment, createOrUpdateClient, notifyBackoffice, createCaseInCRM } from './crm.js';
 import { extractData } from './extract.js';
 
 function getRDHour() {

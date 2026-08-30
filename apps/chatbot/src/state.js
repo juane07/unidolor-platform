@@ -38,6 +38,21 @@ export function getConvState(from) {
   return conversations.get(from);
 }
 
+// ── Case/Motivo de contacto flow ──
+export function setContactReason(from, data) {
+  const state = getConvState(from);
+  state.contactReason = { ...state.contactReason, ...data };
+}
+
+export function getContactReason(from) {
+  return getConvState(from).contactReason || null;
+}
+
+export function clearContactReason(from) {
+  const state = getConvState(from);
+  state.contactReason = null;
+}
+
 export function setFormData(from, formData) {
   const state = getConvState(from);
   state.formData = { ...state.formData, ...formData };
@@ -228,6 +243,7 @@ export async function loadConvHistory(from, kv) {
       awaitingAfiliado: finalState?.awaitingAfiliado || null,
       afiliadoTimeoutAt: finalState?.afiliadoTimeoutAt || null,
       extraction: finalState?.extraction || null,
+      contactReason: finalState?.contactReason || null,
     });
     if (modelData) Object.assign(modelState, modelData);
   } catch (err) {
@@ -262,6 +278,7 @@ export async function saveConvHistory(from, kv) {
       awaitingAfiliado: conv.awaitingAfiliado || null,
       afiliadoTimeoutAt: conv.afiliadoTimeoutAt || null,
       extraction: conv.extraction || null,
+      contactReason: conv.contactReason || null,
     };
     await kv.put(`state:conv:${from}`, JSON.stringify(statePayload), { expirationTtl: 86400 });
     await kv.put(`conv:${from}`, JSON.stringify({

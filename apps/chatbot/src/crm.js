@@ -272,6 +272,52 @@ export async function notifyBackoffice(env, extraction, crmResult, appointmentRe
   }
 }
 
+export async function createCaseInCRM(env, { clientPhone, motivoContacto, servicioCodigo, procedimientoCodigo, notes, source }) {
+  const url = env.CRM_WEBHOOK_URL;
+  if (!url) {
+    console.log('CRM_WEBHOOK_URL not configured, skipping case creation');
+    return { ok: false, error: 'CRM_WEBHOOK_URL no configurado' };
+  }
+
+  const apiKey = env.CRM_API_KEY || 'unidolor-webhook-key-2026';
+
+  // Construir URL del endpoint de cases
+  const caseUrl = url.replace('/webhook/bot', '/webhook/case');
+
+  const payload = {
+    clientPhone,
+    motivoContacto: motivoContacto || {},
+    servicioCodigo: servicioCodigo || '',
+    procedimientoCodigo: procedimientoCodigo || '',
+    notes: notes || '',
+    source: source || 'whatsapp',
+  };
+
+  try {
+    const res = await fetch(caseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('CRM case creation error:', res.status, text);
+      return { ok: false, error: `CRM error ${res.status}: ${text}` };
+    }
+
+    const result = await res.json();
+    console.log('CRM case creation success:', result);
+    return { ok: true, caseId: result.caseId, caseNumber: result.caseNumber };
+  } catch (err) {
+    console.error('CRM case creation error:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 export { sendToCRM };
 
 export async function sendBackofficePhoto(env, base64, caption) {

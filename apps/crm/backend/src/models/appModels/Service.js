@@ -60,6 +60,12 @@ const schema = new mongoose.Schema({
   preguntasCotizacion: [{ type: String }],
   basePrice: { type: Number, default: 0 },
   isActive: { type: Boolean, default: true },
+
+  // ── Referencias a catálogos del catálogo unificado ──
+  procedures: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Procedure' }],
+  consentTemplates: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ConsentTemplate' }],
+  catalogCodigo: { type: String }, // Código en services-catalog.js (CMD, DOL, PROC, etc.)
+
   created: { type: Date, default: Date.now },
   updated: { type: Date, default: Date.now },
 });
@@ -69,5 +75,6 @@ schema.index({ modalidad: 1, enabled: 1, removed: 1 });
 schema.index({ tipoServicio: 1, enabled: 1, removed: 1 });
 schema.index({ clasificacion: 1, enabled: 1, removed: 1 });
 schema.index({ grupoCatalogo: 1, enabled: 1, removed: 1 });
+schema.index({ catalogCodigo: 1, removed: 1 });
 
 module.exports = mongoose.model('Service', schema);
