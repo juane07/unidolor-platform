@@ -1,10 +1,9 @@
 services:
   - type: web
     name: unidolor-crm
-    runtime: node
+    runtime: docker
     plan: free
-    buildCommand: cd apps/crm/frontend && pnpm install && pnpm run build && cd ../backend && pnpm install
-    startCommand: cd apps/crm/backend && node src/server.js
+    dockerfilePath: ./apps/crm/Dockerfile
     healthCheckPath: /
     envVars:
       - key: DATABASE
@@ -12,7 +11,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: PORT
-        value: 8080
+        value: "8080"
       - key: WEBHOOK_API_KEY
         value: unidolor-webhook-key-2026
       - key: NODE_ENV
