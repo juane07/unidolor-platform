@@ -1,19 +1,21 @@
 const mongoose = require('mongoose');
 const createCRUDController = require('@/controllers/middlewaresControllers/createCRUDController');
+const { institutionalConfig } = require('@/config/institutionalConfig');
+const { nextNcf } = require('@/helpers/ncf');
 
 const methods = createCRUDController('Withholding');
 
 const Withholding = mongoose.model('Withholding');
-const NcfSequence = mongoose.model('NcfSequence');
+const Invoice = mongoose.model('Invoice');
 
 const TIPO_PORCENTAJE = {
-  ITBIS: 18,
-  ISR: 10,
+  ITBIS: institutionalConfig.configuracionFacturacion.itbisRetencion,
+  ISR: institutionalConfig.configuracionFacturacion.isrRetencion,
 };
 
 methods.create = async (req, res) => {
   try {
-    const { tipo, baseAmount, percentage, invoice, branch } = req.body;
+    const { tipo, baseAmount, percentage, invoice, branch, exento } = req.body;
     if (!tipo || baseAmount === undefined) {
       return res.status(400).json({
         success: false,
@@ -24,20 +26,33 @@ methods.create = async (req, res) => {
       return res.status(400).json({ success: false, message: 'tipo debe ser ITBIS o ISR' });
     }
 
+    // Bloqueo ITBIS sobre operaciones exentas (RN-020, R14-A5): los servicios
+    // de salud no generan ITBIS, por lo que no existe monto que retener.
+    if (tipo === 'ITBIS') {
+      if (exento) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede retener ITBIS sobre operaciones exentas (RN-020)',
+        });
+      }
+      if (invoice) {
+        const factura = await Invoice.findOne({ _id: invoice, removed: false });
+        if (factura && (Number(factura.taxRate) === 0 || Number(factura.taxTotal) === 0)) {
+          return res.status(400).json({
+            success: false,
+            message: 'La factura referenciada es exenta de ITBIS: no hay monto que retener (RN-020)',
+          });
+        }
+      }
+    }
+
     const pct = percentage ?? TIPO_PORCENTAJE[tipo];
     const amount = Number((baseAmount * (pct / 100)).toFixed(2));
 
     let ncf;
     if (tipo === 'ITBIS') {
-      const filter = { tipo: '04', isActive: true, enabled: true, removed: false };
-      if (branch) filter.branch = branch;
-      else filter.branch = { $exists: false };
-      const sequence = await NcfSequence.findOne(filter);
-      if (sequence && sequence.secuenciaActual < sequence.rangoHasta) {
-        const nextNum = sequence.secuenciaActual + 1;
-        ncf = `${sequence.tipo}${String(nextNum).padStart(8, '0')}`;
-        await NcfSequence.findByIdAndUpdate(sequence._id, { secuenciaActual: nextNum, updated: Date.now() });
-      }
+      const reservado = await nextNcf('04', branch || null);
+      ncf = reservado.ncf;
     }
 
     const data = {

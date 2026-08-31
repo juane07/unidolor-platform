@@ -5,6 +5,7 @@ const Model = mongoose.model('Invoice');
 const { calculate } = require('@/helpers');
 const { increaseBySettingKey } = require('@/middlewares/settings');
 const schema = require('./schemaValidate');
+const { nextNcf } = require('@/helpers/ncf');
 
 const create = async (req, res) => {
   let body = req.body;
@@ -42,30 +43,35 @@ const create = async (req, res) => {
   body['total'] = total;
   body['items'] = items;
 
-  const NcfSequence = mongoose.model('NcfSequence');
   const ncfTipo = body.ncfTipo || '01';
-  const ncfFilter = { tipo: ncfTipo, isActive: true, enabled: true, removed: false };
-  if (body.branch) ncfFilter.branch = body.branch;
-  else ncfFilter.branch = { $exists: false };
-  const sequence = await NcfSequence.findOne(ncfFilter);
-  if (sequence) {
-    if (sequence.secuenciaActual < sequence.rangoHasta) {
-      const nextNum = sequence.secuenciaActual + 1;
-      const ncf = `${sequence.tipo}${String(nextNum).padStart(8, '0')}`;
-      body.ncf = ncf;
-      body.ncfTipo = sequence.tipo;
-      body.regimen = sequence.regimen || 'RST';
-      await NcfSequence.findByIdAndUpdate(sequence._id, { secuenciaActual: nextNum, updated: Date.now() });
-    }
+  let cuerpo = { ...body };
+
+  if (body.asignarNcf === false) {
+    // Sin NCF: se guarda como borrador (no es comprobante fiscal, RN-023)
+    cuerpo.estadoFiscal = 'borrador';
+  } else {
+    const reservado = await nextNcf(ncfTipo, body.branch || null);
+    cuerpo.ncf = reservado.ncf;
+    cuerpo.ncfTipo = reservado.tipo;
+    cuerpo.regimen = reservado.regimen;
+    cuerpo.estadoFiscal = 'emitida';
   }
 
-  let paymentStatus = calculate.sub(total, discount) === 0 ? 'paid' : 'unpaid';
+  let paymentStatus = calculate.sub(cuerpo.total, discount) === 0 ? 'paid' : 'unpaid';
 
-  body['paymentStatus'] = paymentStatus;
-  body['createdBy'] = req.admin._id;
+  cuerpo['paymentStatus'] = paymentStatus;
+  cuerpo['createdBy'] = req.admin._id;
+  cuerpo['bitacora'] = [
+    {
+      accion: 'creacion',
+      usuario: req.admin._id,
+      fecha: new Date(),
+      detalle: cuerpo.estadoFiscal === 'emitida' ? 'Factura emitida con NCF ' + cuerpo.ncf : 'Factura creada como borrador',
+    },
+  ];
 
   // Creating a new document in the collection
-  const result = await new Model(body).save();
+  const result = await new Model(cuerpo).save();
   const fileId = 'invoice-' + result._id + '.pdf';
   const updateResult = await Model.findOneAndUpdate(
     { _id: result._id },

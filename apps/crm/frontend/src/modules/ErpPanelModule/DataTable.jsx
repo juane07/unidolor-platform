@@ -10,7 +10,7 @@ import {
   ArrowRightOutlined,
   ArrowLeftOutlined,
 } from '@ant-design/icons';
-import { Dropdown, Table, Button } from 'antd';
+import { Dropdown, Table, Button, Modal, message } from 'antd';
 import { PageHeader } from '@ant-design/pro-layout';
 
 import AutoCompleteAsync from '@/components/AutoCompleteAsync';
@@ -20,6 +20,7 @@ import { erp } from '@/redux/erp/actions';
 import { selectListItems } from '@/redux/erp/selectors';
 import { useErpContext } from '@/context/erp';
 import { useNavigate } from 'react-router-dom';
+import { request } from '@/request';
 
 import { DOWNLOAD_BASE_URL } from '@/config/serverApiConfig';
 
@@ -51,7 +52,7 @@ export default function DataTable({ config, extra = [] }) {
   const { erpContextAction } = useErpContext();
   const { modal } = erpContextAction;
 
-  const items = [
+  const baseActionItems = [
     {
       label: translate('Show'),
       key: 'read',
@@ -67,17 +68,13 @@ export default function DataTable({ config, extra = [] }) {
       key: 'download',
       icon: <FilePdfOutlined />,
     },
-    ...extra,
-    {
-      type: 'divider',
-    },
-
-    {
-      label: translate('Delete'),
-      key: 'delete',
-      icon: <DeleteOutlined />,
-    },
   ];
+
+  const deleteActionItem = {
+    label: translate('Delete'),
+    key: 'delete',
+    icon: <DeleteOutlined />,
+  };
 
   const navigate = useNavigate();
 
@@ -99,6 +96,26 @@ export default function DataTable({ config, extra = [] }) {
     modal.open();
   };
 
+  const handleAnular = (record) => {
+    Modal.confirm({
+      title: translate('anular_factura'),
+      content: translate('anular_factura_message'),
+      okText: translate('Anular'),
+      okButtonProps: { danger: true },
+      cancelText: translate('Cancel'),
+      onOk: async () => {
+        const data = await request.post({
+          entity: `invoice/anular/${record._id}`,
+          jsonData: {},
+        });
+        if (data.success) {
+          message.success(data.message);
+          dispatch(erp.list({ entity }));
+        }
+      },
+    });
+  };
+
   const handleRecordPayment = (record) => {
     dispatch(erp.currentItem({ data: record }));
     navigate(`/invoice/pay/${record._id}`);
@@ -110,41 +127,55 @@ export default function DataTable({ config, extra = [] }) {
       title: '',
       key: 'action',
       fixed: 'right',
-      render: (_, record) => (
-        <Dropdown
-          menu={{
-            items,
-            onClick: ({ key }) => {
-              switch (key) {
-                case 'read':
-                  handleRead(record);
-                  break;
-                case 'edit':
-                  handleEdit(record);
-                  break;
-                case 'download':
-                  handleDownload(record);
-                  break;
-                case 'delete':
-                  handleDelete(record);
-                  break;
-                case 'recordPayment':
-                  handleRecordPayment(record);
-                  break;
-                default:
-                  break;
-              }
-              // else if (key === '2')handleCloseTask
-            },
-          }}
-          trigger={['click']}
-        >
-          <EllipsisOutlined
-            style={{ cursor: 'pointer', fontSize: '24px' }}
-            onClick={(e) => e.preventDefault()}
-          />
-        </Dropdown>
-      ),
+      render: (_, record) => {
+        const esComprobanteFiscal = record.estadoFiscal && record.estadoFiscal !== 'borrador';
+        const items = [
+          ...baseActionItems.filter((it) => it.key !== 'edit' || !esComprobanteFiscal),
+          ...extra.filter((it) => (it.showWhen ? it.showWhen(record) : true)),
+          {
+            type: 'divider',
+          },
+          ...(esComprobanteFiscal ? [] : [deleteActionItem]),
+        ];
+        return (
+          <Dropdown
+            menu={{
+              items,
+              onClick: ({ key }) => {
+                switch (key) {
+                  case 'read':
+                    handleRead(record);
+                    break;
+                  case 'edit':
+                    handleEdit(record);
+                    break;
+                  case 'download':
+                    handleDownload(record);
+                    break;
+                  case 'delete':
+                    handleDelete(record);
+                    break;
+                  case 'recordPayment':
+                    handleRecordPayment(record);
+                    break;
+                  case 'anular':
+                    handleAnular(record);
+                    break;
+                  default:
+                    break;
+                }
+                // else if (key === '2')handleCloseTask
+              },
+            }}
+            trigger={['click']}
+          >
+            <EllipsisOutlined
+              style={{ cursor: 'pointer', fontSize: '24px' }}
+              onClick={(e) => e.preventDefault()}
+            />
+          </Dropdown>
+        );
+      },
     },
   ];
 

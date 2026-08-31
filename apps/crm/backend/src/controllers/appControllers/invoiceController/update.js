@@ -25,6 +25,22 @@ const update = async (req, res) => {
     removed: false,
   });
 
+  if (!previousInvoice) {
+    return res.status(404).json({
+      success: false,
+      result: null,
+      message: 'Invoice not found',
+    });
+  }
+
+  if (previousInvoice.estadoFiscal && previousInvoice.estadoFiscal !== 'borrador') {
+    return res.status(400).json({
+      success: false,
+      result: null,
+      message: 'Factura emitida no editable; use nota de crédito/débito (RN-023)',
+    });
+  }
+
   const { credit } = previousInvoice;
 
   const { items = [], taxRate = 0, discount = 0 } = req.body;

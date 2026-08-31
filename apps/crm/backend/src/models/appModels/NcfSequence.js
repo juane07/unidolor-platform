@@ -28,6 +28,8 @@ const schema = new mongoose.Schema({
   rangoHasta: { type: Number, required: true },
   vigenciaDesde: { type: Date },
   vigenciaHasta: { type: Date },
+  fechaAutorizacion: { type: Date },
+  fechaVencimiento: { type: Date },
   isActive: { type: Boolean, default: true },
   created: { type: Date, default: Date.now },
   updated: { type: Date, default: Date.now },

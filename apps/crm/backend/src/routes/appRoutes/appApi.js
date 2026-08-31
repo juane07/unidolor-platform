@@ -54,6 +54,19 @@ if (ncfSequenceController && ncfSequenceController.seedDefault) {
   router.route('/ncfsequence/seed').post(catchErrors(ncfSequenceController['seedDefault']));
 }
 
+const invoiceController = appControllers['invoiceController'];
+if (invoiceController) {
+  if (invoiceController.anular) {
+    router.route('/invoice/anular/:id').post(catchErrors(invoiceController['anular']));
+  }
+  if (invoiceController.emitirNotaCredito) {
+    router.route('/invoice/notacredito/:id').post(catchErrors(invoiceController['emitirNotaCredito']));
+  }
+  if (invoiceController.emitirNotaDebito) {
+    router.route('/invoice/notadebito/:id').post(catchErrors(invoiceController['emitirNotaDebito']));
+  }
+}
+
 const eCFController = appControllers['eCFController'];
 if (eCFController && eCFController.submit) {
   router.route('/ecf/submit').post(catchErrors(eCFController['submit']));

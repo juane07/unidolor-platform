@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const createCRUDController = require('@/controllers/middlewaresControllers/createCRUDController');
+const { nextNcf } = require('@/helpers/ncf');
 
 const methods = createCRUDController('NcfSequence');
 
@@ -10,22 +11,16 @@ methods.next = async (req, res) => {
     const { tipo, branch } = req.body;
     if (!tipo) return res.status(400).json({ success: false, message: 'tipo is required' });
 
-    const filter = { tipo, isActive: true, enabled: true, removed: false };
-    if (branch) filter.branch = branch;
-    else filter.branch = { $exists: false };
-
-    const sequence = await NcfSequence.findOne(filter);
-    if (!sequence) return res.status(404).json({ success: false, message: 'No active NCF sequence found for this tipo' });
-    if (sequence.secuenciaActual >= sequence.rangoHasta) return res.status(400).json({ success: false, message: 'NCF sequence exhausted for this tipo' });
-
-    const nextNum = sequence.secuenciaActual + 1;
-    const ncf = `${sequence.tipo}${String(nextNum).padStart(8, '0')}`;
-
-    await NcfSequence.findByIdAndUpdate(sequence._id, { secuenciaActual: nextNum, updated: Date.now() });
+    const reservado = await nextNcf(tipo, branch || null);
 
     return res.status(200).json({
       success: true,
-      result: { ncf, tipo: sequence.tipo, secuencia: nextNum, regimen: sequence.regimen },
+      result: {
+        ncf: reservado.ncf,
+        tipo: reservado.tipo,
+        secuencia: reservado.secuenciaActual,
+        regimen: reservado.regimen,
+      },
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

@@ -159,6 +159,30 @@ const invoiceSchema = new mongoose.Schema({
     enum: ['draft', 'pending', 'sent', 'refunded', 'cancelled', 'on hold'],
     default: 'draft',
   },
+  estadoFiscal: {
+    type: String,
+    enum: ['borrador', 'emitida', 'anulada', 'nota_credito'],
+    default: 'borrador',
+  },
+  notaRef: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Invoice',
+  },
+  motivo: String,
+  bitacora: [
+    {
+      accion: String,
+      usuario: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Admin',
+      },
+      fecha: {
+        type: Date,
+        default: Date.now,
+      },
+      detalle: String,
+    },
+  ],
   pdf: {
     type: String,
   },
@@ -188,5 +212,9 @@ invoiceSchema.plugin(require('mongoose-autopopulate'));
 
 invoiceSchema.index({ client: 1, removed: 1, date: -1 });
 invoiceSchema.index({ 'items.service': 1, removed: 1 });
+invoiceSchema.index(
+  { ncf: 1 },
+  { unique: true, partialFilterExpression: { ncf: { $type: 'string' }, removed: false } }
+);
 
 module.exports = mongoose.model('Invoice', invoiceSchema);

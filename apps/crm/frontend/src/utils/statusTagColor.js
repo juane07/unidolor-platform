@@ -23,6 +23,12 @@ const colors = [
   { value: 'partially', label: 'partially paid', color: 'purple', icon: '💰' },
   { value: 'overdue', label: 'overdue', color: 'red', icon: '💰' },
 
+  { value: 'borrador', label: 'borrador', color: 'default', icon: '📝' },
+  { value: 'emitida', label: 'emitida', color: 'green', icon: '✅' },
+  { value: 'anulada', label: 'anulada', color: 'red', icon: '❌' },
+  { value: 'nota_credito', label: 'nota de crédito', color: 'purple', icon: '💰' },
+  { value: 'nota_debito', label: 'nota de débito', color: 'gold', icon: '📈' },
+
   { value: 'processing', label: 'processing', color: 'geekblue', icon: '⌛' },
   { value: 'packing', label: 'packing', color: 'orange', icon: '📦' },
   { value: 'shipped', label: 'shipped', color: 'purple', icon: '✈️' },

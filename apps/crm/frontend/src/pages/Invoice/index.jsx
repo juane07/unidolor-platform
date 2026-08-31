@@ -77,6 +77,24 @@ export default function Invoice() {
       render: (total, record) => moneyFormatter({ amount: total, currency_code: record.currency }),
     },
     {
+      title: 'NCF',
+      dataIndex: 'ncf',
+      render: (ncf) => ncf || '',
+    },
+    {
+      title: translate('Estado fiscal'),
+      dataIndex: 'estadoFiscal',
+      render: (estado) => {
+        if (!estado) return '';
+        const { color, label, icon } = tagColor(estado) || {};
+        return (
+          <Tag color={color}>
+            {icon} {label || estado}
+          </Tag>
+        );
+      },
+    },
+    {
       title: translate('Status'),
       dataIndex: 'status',
     },

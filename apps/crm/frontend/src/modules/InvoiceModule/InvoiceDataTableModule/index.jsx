@@ -1,7 +1,7 @@
 import { ErpLayout } from '@/layout';
 import ErpPanel from '@/modules/ErpPanelModule';
 import useLanguage from '@/locale/useLanguage';
-import { CreditCardOutlined } from '@ant-design/icons';
+import { CreditCardOutlined, StopOutlined } from '@ant-design/icons';
 
 export default function InvoiceDataTableModule({ config }) {
   const translate = useLanguage();
@@ -14,6 +14,12 @@ export default function InvoiceDataTableModule({ config }) {
             label: translate('Record Payment'),
             key: 'recordPayment',
             icon: <CreditCardOutlined />,
+          },
+          {
+            label: translate('Anular'),
+            key: 'anular',
+            icon: <StopOutlined />,
+            showWhen: (record) => record.estadoFiscal === 'emitida',
           },
         ]}
       ></ErpPanel>

@@ -46,7 +46,8 @@ export const institutionalConfig: InstitutionalConfig = {
   configuracionFacturacion: {
     itbisSalud: 0,
     itbisGeneral: 18,
-    isrRetencion: 10,
+    itbisRetencion: 18,
+    isrRetencion: 15,
     ncfTipos: ['01', '02', '03', '04', '11'],
     prefijoFactura: 'FAC-',
     prefijoCotizacion: 'COT-',

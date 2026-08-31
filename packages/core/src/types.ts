@@ -53,6 +53,7 @@ export interface InstitucionInfo {
 export interface ConfiguracionFacturacion {
   itbisSalud: number;
   itbisGeneral: number;
+  itbisRetencion: number;
   isrRetencion: number;
   ncfTipos: string[];
   prefijoFactura: string;

@@ -38,7 +38,13 @@
   {
     "settingCategory": "invoice_settings",
     "settingKey": "invoice_isr_retencion",
-    "settingValue": 10,
+    "settingValue": 15,
+    "valueType": "number"
+  },
+  {
+    "settingCategory": "invoice_settings",
+    "settingKey": "invoice_itbis_retencion",
+    "settingValue": 18,
     "valueType": "number"
   }
 ]
