@@ -8,9 +8,12 @@ const methods = createCRUDController('Withholding');
 const Withholding = mongoose.model('Withholding');
 const Invoice = mongoose.model('Invoice');
 
-const TIPO_PORCENTAJE = {
-  ITBIS: institutionalConfig.configuracionFacturacion.itbisRetencion,
-  ISR: institutionalConfig.configuracionFacturacion.isrRetencion,
+const getRetenciones = () => {
+  const cfg = institutionalConfig?.configuracionFacturacion;
+  return {
+    ITBIS: cfg?.itbisRetencion ?? 18,
+    ISR: cfg?.isrRetencion ?? 10,
+  };
 };
 
 methods.create = async (req, res) => {
@@ -46,6 +49,7 @@ methods.create = async (req, res) => {
       }
     }
 
+    const TIPO_PORCENTAJE = getRetenciones();
     const pct = percentage ?? TIPO_PORCENTAJE[tipo];
     const amount = Number((baseAmount * (pct / 100)).toFixed(2));
 
