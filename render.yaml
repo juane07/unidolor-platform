@@ -1,9 +1,10 @@
 services:
   - type: web
     name: unidolor-crm
-    runtime: docker
+    runtime: node
     plan: free
-    dockerfilePath: ./apps/crm/Dockerfile
+    buildCommand: corepack enable && corepack prepare pnpm@11.20.0 --activate && pnpm install && pnpm --filter @unidolor/crm-frontend build
+    startCommand: cd apps/crm/backend && node src/server.js
     healthCheckPath: /
     envVars:
       - key: DATABASE
