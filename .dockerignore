@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+.git
+.github
+*.md
+AGENTS.md
+*.log
+.env
+.env.*
+.DS_Store
+render.yaml
+nixpacks.toml
