@@ -1,15 +1,9 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 const moment = require('moment');
-
-const Model = mongoose.model('Payment');
-const { loadSettings } = require('@/middlewares/settings');
 
 const summary = async (req, res) => {
   let defaultType = 'month';
-
   const { type } = req.query;
-
-  const settings = await loadSettings();
 
   if (type) {
     if (['week', 'month', 'year'].includes(type)) {
@@ -23,45 +17,18 @@ const summary = async (req, res) => {
     }
   }
 
-  const currentDate = moment();
-  let startDate = currentDate.clone().startOf(defaultType);
-  let endDate = currentDate.clone().endOf(defaultType);
-
-  // get total amount of invoices
-  const result = await Model.aggregate([
-    {
-      $match: {
-        removed: false,
-
-        // date: {
-        //   $gte: startDate.toDate(),
-        //   $lte: endDate.toDate(),
-        // },
-      },
-    },
-    {
-      $group: {
-        _id: null, // Group all documents into a single group
-        count: {
-          $sum: 1,
-        },
-        total: {
-          $sum: '$amount',
-        },
-      },
-    },
-    {
-      $project: {
-        _id: 0, // Exclude _id from the result
-        count: 1,
-        total: 1,
-      },
-    },
-  ]);
+  const result = await prisma.payment.aggregate({
+    where: { removed: false },
+    _count: true,
+    _sum: { amount: true },
+  });
 
   return res.status(200).json({
     success: true,
-    result: result.length > 0 ? result[0] : { count: 0, total: 0 },
+    result: {
+      count: result._count || 0,
+      total: result._sum?.amount || 0,
+    },
     message: `Successfully fetched the summary of payment invoices for the last ${defaultType}`,
   });
 };

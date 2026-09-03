@@ -1,29 +1,28 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 
 const logout = async (req, res, { userModel }) => {
-  const UserPassword = mongoose.model(userModel + 'Password');
-
-  // const token = req.cookies[`token_${cloud._id}`];
-
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Extract the token
+  const token = authHeader && authHeader.split(' ')[1];
 
-  if (token)
-    await UserPassword.findOneAndUpdate(
-      { user: req.admin._id },
-      { $pull: { loggedSessions: token } },
-      {
-        new: true,
-      }
-    ).exec();
-  else
-    await UserPassword.findOneAndUpdate(
-      { user: req.admin._id },
-      { loggedSessions: [] },
-      {
-        new: true,
-      }
-    ).exec();
+  const passwordRecord = await prisma.adminPassword.findFirst({
+    where: { adminId: req.admin.id, removed: false },
+  });
+
+  if (passwordRecord) {
+    if (token) {
+      await prisma.adminPassword.update({
+        where: { id: passwordRecord.id },
+        data: {
+          loggedSessions: passwordRecord.loggedSessions.filter((t) => t !== token),
+        },
+      });
+    } else {
+      await prisma.adminPassword.update({
+        where: { id: passwordRecord.id },
+        data: { loggedSessions: [] },
+      });
+    }
+  }
 
   return res.json({
     success: true,

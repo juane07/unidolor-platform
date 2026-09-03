@@ -1,25 +1,22 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 
 const read = async (userModel, req, res) => {
-  const User = mongoose.model(userModel);
-
-  // Find document by id
-  const tmpResult = await User.findOne({
-    _id: req.params.id,
-    removed: false,
-  }).exec();
-  // If no results found, return document not found
-  if (!tmpResult) {
-    return res.status(404).json({
-      success: false,
-      result: null,
-      message: 'No document found ',
+  try {
+    const tmpResult = await prisma.admin.findFirst({
+      where: { id: req.params.id, removed: false },
     });
-  } else {
-    // Return success resposne
-    let result = {
-      _id: tmpResult._id,
-      enabled: tmpResult.enabled,
+
+    if (!tmpResult) {
+      return res.status(404).json({
+        success: false,
+        result: null,
+        message: 'No document found ',
+      });
+    }
+
+    const result = {
+      _id: tmpResult.id,
+      enabled: tmpResult.isActive,
       email: tmpResult.email,
       name: tmpResult.name,
       surname: tmpResult.surname,
@@ -31,6 +28,12 @@ const read = async (userModel, req, res) => {
       success: true,
       result,
       message: 'we found this document ',
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      result: null,
+      message: error.message,
     });
   }
 };

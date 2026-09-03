@@ -1,9 +1,4 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Payment');
-const Invoice = mongoose.model('Invoice');
-const custom = require('@/controllers/pdfController');
-
+const prisma = require('@/db/prisma');
 const { calculate } = require('@/helpers');
 
 const update = async (req, res) => {
@@ -14,15 +9,18 @@ const update = async (req, res) => {
       message: `The Minimum Amount couldn't be 0`,
     });
   }
-  // Find document by id and updates with the required fields
-  const previousPayment = await Model.findOne({
-    _id: req.params.id,
-    removed: false,
+
+  const previousPayment = await prisma.payment.findFirst({
+    where: { id: req.params.id, removed: false },
+    include: { invoice: true },
   });
+
+  if (!previousPayment) {
+    return res.status(404).json({ success: false, result: null, message: 'Payment not found' });
+  }
 
   const { amount: previousAmount } = previousPayment;
   const { id: invoiceId, total, discount, credit: previousCredit } = previousPayment.invoice;
-
   const { amount: currentAmount } = req.body;
 
   const changedAmount = calculate.sub(currentAmount, previousAmount);
@@ -33,7 +31,6 @@ const update = async (req, res) => {
       success: false,
       result: null,
       message: `The Max Amount you can add is ${maxAmount + previousAmount}`,
-      error: `The Max Amount you can add is ${maxAmount + previousAmount}`,
     });
   }
 
@@ -44,37 +41,26 @@ const update = async (req, res) => {
       ? 'partially'
       : 'unpaid';
 
-  const updatedDate = new Date();
-  const updates = {
-    number: req.body.number,
-    date: req.body.date,
-    amount: req.body.amount,
-    paymentMode: req.body.paymentMode,
-    ref: req.body.ref,
-    description: req.body.description,
-    updated: updatedDate,
-  };
-
-  const result = await Model.findOneAndUpdate(
-    { _id: req.params.id, removed: false },
-    { $set: updates },
-    {
-      new: true, // return the new result instead of the old one
-    }
-  ).exec();
-
-  const updateInvoice = await Invoice.findOneAndUpdate(
-    { _id: result.invoice._id.toString() },
-    {
-      $inc: { credit: changedAmount },
-      $set: {
-        paymentStatus: paymentStatus,
-      },
+  const result = await prisma.payment.update({
+    where: { id: req.params.id },
+    data: {
+      number: req.body.number,
+      date: req.body.date,
+      amount: req.body.amount,
+      paymentMode: req.body.paymentMode,
+      ref: req.body.ref,
+      description: req.body.description,
+      updated: new Date(),
     },
-    {
-      new: true, // return the new result instead of the old one
-    }
-  ).exec();
+  });
+
+  await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      credit: { increment: changedAmount },
+      paymentStatus,
+    },
+  });
 
   return res.status(200).json({
     success: true,

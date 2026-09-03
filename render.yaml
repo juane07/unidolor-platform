@@ -3,14 +3,14 @@ services:
     name: unidolor-crm
     runtime: node
     plan: free
-    buildCommand: corepack enable && corepack prepare pnpm@11.20.0 --activate && pnpm install && pnpm --filter @unidolor/crm-frontend build
+    buildCommand: corepack enable && corepack prepare pnpm@11.20.0 --activate && pnpm install && pnpm --filter @unidolor/crm-frontend build && cd apps/crm/backend && npx prisma generate
     startCommand: cd apps/crm/backend && node src/server.js
     healthCheckPath: /
     envVars:
-      - key: DATABASE
+      - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
-        generateValue: true
+        value: unidolor_jwt_secret_2026
       - key: PORT
         value: "8080"
       - key: WEBHOOK_API_KEY

@@ -1,14 +1,7 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 const fs = require('fs');
 const { catchErrors } = require('@/handlers/errorHandlers');
 const custom = require('@/controllers/pdfController');
-
-const Appointment = mongoose.model('Appointment');
-const DoctorSchedule = mongoose.model('DoctorSchedule');
-const Client = mongoose.model('Client');
-const Doctor = mongoose.model('Doctor');
-const Branch = mongoose.model('Branch');
-const Opportunity = mongoose.model('Opportunity');
 
 function timeToMinutes(time) {
   const [h, m] = time.split(':').map(Number);
@@ -17,11 +10,10 @@ function timeToMinutes(time) {
 
 async function generateFicha(appointmentId) {
   try {
-    const populated = await Appointment.findById(appointmentId)
-      .populate('client')
-      .populate('doctor')
-      .populate('branch')
-      .populate('opportunity', 'service');
+    const populated = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: { client: true, doctor: true, branch: true, opportunity: { select: { service: true } } },
+    });
 
     const folderPath = 'appointment';
     const fileId = 'appointment-' + appointmentId + '.pdf';
@@ -34,7 +26,7 @@ async function generateFicha(appointmentId) {
       setTimeout(resolve, 20000);
     });
 
-    await Appointment.findByIdAndUpdate(appointmentId, { pdf: fileId });
+    await prisma.appointment.update({ where: { id: appointmentId }, data: { pdf: fileId } });
   } catch (e) {
     console.error('Error generando ficha de atención:', e.message);
   }
@@ -71,32 +63,30 @@ const create = catchErrors(async (req, res) => {
   }
 
   const [client, doctor, branch] = await Promise.all([
-    Client.findById(clientId),
-    Doctor.findById(doctorId),
-    Branch.findById(branchId),
+    prisma.client.findUnique({ where: { id: clientId } }),
+    prisma.doctor.findUnique({ where: { id: doctorId } }),
+    branchId ? prisma.branch.findUnique({ where: { id: branchId } }) : null,
   ]);
 
   if (!client) return res.status(404).json({ success: false, message: 'Cliente no encontrado' });
   if (!doctor) return res.status(404).json({ success: false, message: 'Doctor no encontrado' });
-  if (!branch) return res.status(404).json({ success: false, message: 'Sucursal no encontrada' });
+  if (branchId && !branch) return res.status(404).json({ success: false, message: 'Sucursal no encontrada' });
 
   const apptDate = new Date(date);
   const dayOfWeek = apptDate.getDay();
 
-  const schedule = await DoctorSchedule.findOne({
-    removed: false,
-    enabled: true,
-    doctor: doctorId,
-    branch: branchId,
-    dayOfWeek,
-    $or: [
-      { validFrom: { $exists: false } },
-      { validFrom: { $lte: apptDate } },
-    ],
-    $or: [
-      { validUntil: { $exists: false } },
-      { validUntil: { $gte: apptDate } },
-    ],
+  const schedule = await prisma.doctorSchedule.findFirst({
+    where: {
+      removed: false,
+      enabled: true,
+      doctorId,
+      branchId,
+      dayOfWeek,
+      OR: [
+        { validFrom: null },
+        { validFrom: { lte: apptDate } },
+      ],
+    },
   });
 
   if (!schedule) {
@@ -106,7 +96,7 @@ const create = catchErrors(async (req, res) => {
     });
   }
 
-  const exception = schedule.exceptions?.find(ex => {
+  const exception = schedule.exceptions?.find((ex) => {
     const exDate = new Date(ex.date).toDateString();
     return exDate === apptDate.toDateString() && ex.isAvailable === false;
   });
@@ -137,14 +127,10 @@ const create = catchErrors(async (req, res) => {
     });
   }
 
-  if (
-    schedule.appointmentTypes &&
-    !schedule.appointmentTypes.includes(type) &&
-    type !== 'visita_domiciliaria'
-  ) {
+  if (schedule.appointmentTypes && !schedule.appointmentTypes.includes(type) && type !== 'visita_domiciliaria') {
     return res.status(400).json({
       success: false,
-      message: `Tipo de cita no permitido para este horario`,
+      message: 'Tipo de cita no permitido para este horario',
     });
   }
 
@@ -153,17 +139,15 @@ const create = catchErrors(async (req, res) => {
   const dayEnd = new Date(apptDate);
   dayEnd.setHours(23, 59, 59, 999);
 
-  const conflicting = await Appointment.findOne({
-    removed: false,
-    status: { $in: ['programada', 'realizada'] },
-    doctor: doctorId,
-    date: {
-      $gte: dayStart,
-      $lte: dayEnd,
+  const conflicting = await prisma.appointment.findFirst({
+    where: {
+      removed: false,
+      status: { in: ['programada', 'realizada'] },
+      doctorId,
+      date: { gte: dayStart, lte: dayEnd },
+      startTime: { lt: endTime },
+      endTime: { gt: startTime },
     },
-    $or: [
-      { startTime: { $lt: endTime }, endTime: { $gt: startTime } },
-    ],
   });
 
   if (conflicting) {
@@ -173,50 +157,59 @@ const create = catchErrors(async (req, res) => {
       conflict: {
         startTime: conflicting.startTime,
         endTime: conflicting.endTime,
-        client: conflicting.client,
+        client: conflicting.clientId,
       },
     });
   }
 
-  const appointment = await Appointment.create({
-    client: clientId,
-    doctor: doctorId,
-    branch: branchId,
-    opportunity: opportunityId || null,
-    date: apptDate,
-    startTime,
-    endTime,
-    duration: duration || (timeToMinutes(endTime) - timeToMinutes(startTime)),
-    type: type || 'primera_vez',
-    status: status || 'programada',
-    notes: notes || '',
-    serviceName: serviceName || '',
-    policyNumber: policyNumber || '',
-    sector: sector || '',
-    familyName: familyName || '',
-    familyIdNumber: familyIdNumber || '',
-    familyPhone: familyPhone || '',
-    familyDomicile: familyDomicile || '',
-    familyEmail: familyEmail || '',
-    createdBy: req.admin?._id || null,
+  const appointment = await prisma.appointment.create({
+    data: {
+      clientId,
+      doctorId,
+      branchId,
+      opportunityId: opportunityId || null,
+      date: apptDate,
+      startTime,
+      endTime,
+      duration: duration || (timeToMinutes(endTime) - timeToMinutes(startTime)),
+      type: type || 'primera_vez',
+      status: status || 'programada',
+      notes: notes || '',
+      serviceName: serviceName || '',
+      policyNumber: policyNumber || '',
+      sector: sector || '',
+      familyName: familyName || '',
+      familyIdNumber: familyIdNumber || '',
+      familyPhone: familyPhone || '',
+      familyDomicile: familyDomicile || '',
+      familyEmail: familyEmail || '',
+      createdById: req.admin?.id || null,
+    },
   });
 
   if (opportunityId) {
-    await Opportunity.findByIdAndUpdate(opportunityId, {
-      stage: 'cita_programada',
-      $set: { 'metadata.appointmentId': appointment._id },
+    await prisma.opportunity.update({
+      where: { id: opportunityId },
+      data: {
+        stage: 'cita_programada',
+        metadata: { appointmentId: appointment.id },
+      },
     });
   }
 
   if (appointment.type === 'visita_domiciliaria') {
-    generateFicha(appointment._id);
+    generateFicha(appointment.id);
   }
 
-  const populated = await Appointment.findById(appointment._id)
-    .populate('client', 'name phone address')
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name')
-    .populate('opportunity', 'service');
+  const populated = await prisma.appointment.findUnique({
+    where: { id: appointment.id },
+    include: {
+      client: { select: { name: true, phone: true, address: true } },
+      doctor: { select: { name: true, specialty: true } },
+      branch: { select: { name: true } },
+      opportunity: { select: { service: true } },
+    },
+  });
 
   return res.status(201).json({ success: true, result: populated });
 });
@@ -225,35 +218,43 @@ const list = catchErrors(async (req, res) => {
   const { client, doctor, branch, from, to, status, type } = req.query;
   const filter = { removed: false };
 
-  if (client) filter.client = client;
-  if (doctor) filter.doctor = doctor;
-  if (branch) filter.branch = branch;
+  if (client) filter.clientId = client;
+  if (doctor) filter.doctorId = doctor;
+  if (branch) filter.branchId = branch;
   if (status) filter.status = status;
   if (type) filter.type = type;
 
   if (from || to) {
     filter.date = {};
-    if (from) filter.date.$gte = new Date(from);
-    if (to) filter.date.$lte = new Date(to);
+    if (from) filter.date.gte = new Date(from);
+    if (to) filter.date.lte = new Date(to);
   }
 
-  const appointments = await Appointment.find(filter)
-    .populate('client', 'name phone address')
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name')
-    .populate('opportunity', 'service stage')
-    .sort({ date: 1, startTime: 1 });
+  const appointments = await prisma.appointment.findMany({
+    where: filter,
+    include: {
+      client: { select: { name: true, phone: true, address: true } },
+      doctor: { select: { name: true, specialty: true } },
+      branch: { select: { name: true } },
+      opportunity: { select: { service: true, stage: true } },
+    },
+    orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+  });
 
   return res.status(200).json({ success: true, result: appointments });
 });
 
 const read = catchErrors(async (req, res) => {
   const { id } = req.params;
-  const appointment = await Appointment.findById(id)
-    .populate('client', 'name phone address email')
-    .populate('doctor', 'name specialty phone email')
-    .populate('branch', 'name address phone')
-    .populate('opportunity', 'service stage notes');
+  const appointment = await prisma.appointment.findUnique({
+    where: { id },
+    include: {
+      client: { select: { name: true, phone: true, address: true, email: true } },
+      doctor: { select: { name: true, specialty: true, phone: true, email: true } },
+      branch: { select: { name: true, address: true, phone: true } },
+      opportunity: { select: { service: true, stage: true, notes: true } },
+    },
+  });
 
   if (!appointment) {
     return res.status(404).json({ success: false, message: 'Cita no encontrada' });
@@ -264,38 +265,31 @@ const read = catchErrors(async (req, res) => {
 const update = catchErrors(async (req, res) => {
   const { id } = req.params;
   const {
-    status,
-    notes,
-    startTime,
-    endTime,
-    date,
-    type,
-    serviceName,
-    policyNumber,
-    sector,
-    familyName,
-    familyIdNumber,
-    familyPhone,
-    familyDomicile,
-    familyEmail,
+    status, notes, startTime, endTime, date, type,
+    serviceName, policyNumber, sector, familyName,
+    familyIdNumber, familyPhone, familyDomicile, familyEmail,
   } = req.body;
 
-  const appointment = await Appointment.findById(id);
+  const appointment = await prisma.appointment.findUnique({ where: { id } });
   if (!appointment) {
     return res.status(404).json({ success: false, message: 'Cita no encontrada' });
   }
+
+  const updateData = {};
 
   if (startTime || endTime || date) {
     const apptDate = date ? new Date(date) : appointment.date;
     const sTime = startTime || appointment.startTime;
     const eTime = endTime || appointment.endTime;
 
-    const schedule = await DoctorSchedule.findOne({
-      removed: false,
-      enabled: true,
-      doctor: appointment.doctor,
-      branch: appointment.branch,
-      dayOfWeek: apptDate.getDay(),
+    const schedule = await prisma.doctorSchedule.findFirst({
+      where: {
+        removed: false,
+        enabled: true,
+        doctorId: appointment.doctorId,
+        branchId: appointment.branchId,
+        dayOfWeek: apptDate.getDay(),
+      },
     });
 
     if (!schedule) {
@@ -307,57 +301,67 @@ const update = catchErrors(async (req, res) => {
     const dayEnd = new Date(apptDate);
     dayEnd.setHours(23, 59, 59, 999);
 
-    const conflicting = await Appointment.findOne({
-      _id: { $ne: id },
-      removed: false,
-      status: { $in: ['programada', 'realizada'] },
-      doctor: appointment.doctor,
-      date: {
-        $gte: dayStart,
-        $lte: dayEnd,
+    const conflicting = await prisma.appointment.findFirst({
+      where: {
+        id: { not: id },
+        removed: false,
+        status: { in: ['programada', 'realizada'] },
+        doctorId: appointment.doctorId,
+        date: { gte: dayStart, lte: dayEnd },
+        startTime: { lt: eTime },
+        endTime: { gt: sTime },
       },
-      $or: [{ startTime: { $lt: eTime }, endTime: { $gt: sTime } }],
     });
 
     if (conflicting) {
       return res.status(409).json({ success: false, message: 'Horario ocupado' });
     }
 
-    appointment.date = apptDate;
-    appointment.startTime = sTime;
-    appointment.endTime = eTime;
+    updateData.date = apptDate;
+    updateData.startTime = sTime;
+    updateData.endTime = eTime;
   }
 
-  if (status) appointment.status = status;
-  if (notes !== undefined) appointment.notes = notes;
-  if (type) appointment.type = type;
-  if (serviceName !== undefined) appointment.serviceName = serviceName;
-  if (policyNumber !== undefined) appointment.policyNumber = policyNumber;
-  if (sector !== undefined) appointment.sector = sector;
-  if (familyName !== undefined) appointment.familyName = familyName;
-  if (familyIdNumber !== undefined) appointment.familyIdNumber = familyIdNumber;
-  if (familyPhone !== undefined) appointment.familyPhone = familyPhone;
-  if (familyDomicile !== undefined) appointment.familyDomicile = familyDomicile;
-  if (familyEmail !== undefined) appointment.familyEmail = familyEmail;
+  if (status) updateData.status = status;
+  if (notes !== undefined) updateData.notes = notes;
+  if (type) updateData.type = type;
+  if (serviceName !== undefined) updateData.serviceName = serviceName;
+  if (policyNumber !== undefined) updateData.policyNumber = policyNumber;
+  if (sector !== undefined) updateData.sector = sector;
+  if (familyName !== undefined) updateData.familyName = familyName;
+  if (familyIdNumber !== undefined) updateData.familyIdNumber = familyIdNumber;
+  if (familyPhone !== undefined) updateData.familyPhone = familyPhone;
+  if (familyDomicile !== undefined) updateData.familyDomicile = familyDomicile;
+  if (familyEmail !== undefined) updateData.familyEmail = familyEmail;
 
-  await appointment.save();
+  const updated = await prisma.appointment.update({
+    where: { id },
+    data: updateData,
+  });
 
-  if (appointment.type === 'visita_domiciliaria') {
-    generateFicha(appointment._id);
+  if (updated.type === 'visita_domiciliaria') {
+    generateFicha(updated.id);
   }
 
-  const populated = await Appointment.findById(appointment._id)
-    .populate('client', 'name phone address')
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name')
-    .populate('opportunity', 'service');
+  const populated = await prisma.appointment.findUnique({
+    where: { id: updated.id },
+    include: {
+      client: { select: { name: true, phone: true, address: true } },
+      doctor: { select: { name: true, specialty: true } },
+      branch: { select: { name: true } },
+      opportunity: { select: { service: true } },
+    },
+  });
 
   return res.status(200).json({ success: true, result: populated });
 });
 
 const remove = catchErrors(async (req, res) => {
   const { id } = req.params;
-  const appointment = await Appointment.findByIdAndUpdate(id, { removed: true, status: 'cancelada' }, { new: true });
+  const appointment = await prisma.appointment.update({
+    where: { id },
+    data: { removed: true, status: 'cancelada' },
+  });
   if (!appointment) {
     return res.status(404).json({ success: false, message: 'Cita no encontrada' });
   }
@@ -367,14 +371,16 @@ const remove = catchErrors(async (req, res) => {
 const listAll = catchErrors(async (req, res) => {
   const sort = req.query.sort || 'desc';
 
-  const appointments = await Appointment.find({
-    removed: false,
-  })
-    .populate('client', 'name phone address')
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name')
-    .populate('opportunity', 'service stage')
-    .sort({ created: sort });
+  const appointments = await prisma.appointment.findMany({
+    where: { removed: false },
+    include: {
+      client: { select: { name: true, phone: true, address: true } },
+      doctor: { select: { name: true, specialty: true } },
+      branch: { select: { name: true } },
+      opportunity: { select: { service: true, stage: true } },
+    },
+    orderBy: { created: sort },
+  });
 
   return res.status(200).json({
     success: true,

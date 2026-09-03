@@ -1,23 +1,14 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Setting');
+const prisma = require('@/db/prisma');
 
 const readBySettingKey = async ({ settingKey }) => {
   try {
-    // Find document by id
+    if (!settingKey) return null;
 
-    if (!settingKey) {
-      return null;
-    }
+    const result = await prisma.setting.findUnique({
+      where: { settingKey },
+    });
 
-    const result = await Model.findOne({ settingKey });
-    // If no results found, return document not found
-    if (!result) {
-      return null;
-    } else {
-      // Return success resposne
-      return result;
-    }
+    return result || null;
   } catch {
     return null;
   }

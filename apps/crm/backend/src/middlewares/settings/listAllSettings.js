@@ -1,19 +1,11 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Setting');
+const prisma = require('@/db/prisma');
 
 const listAllSettings = async () => {
   try {
-    //  Query the database for a list of all results
-    const result = await Model.find({
-      removed: false,
-    }).exec();
-
-    if (result.length > 0) {
-      return result;
-    } else {
-      return [];
-    }
+    const result = await prisma.setting.findMany({
+      where: { removed: false },
+    });
+    return result.length > 0 ? result : [];
   } catch {
     return [];
   }

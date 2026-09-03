@@ -1,13 +1,9 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Invoice');
-const ModelPayment = mongoose.model('Payment');
+const prisma = require('@/db/prisma');
 
 const remove = async (req, res) => {
-  const existing = await Model.findOne({
-    _id: req.params.id,
-    removed: false,
-  }).exec();
+  const existing = await prisma.invoice.findFirst({
+    where: { id: req.params.id, removed: false },
+  });
 
   if (!existing) {
     return res.status(404).json({
@@ -25,29 +21,16 @@ const remove = async (req, res) => {
     });
   }
 
-  const deletedInvoice = await Model.findOneAndUpdate(
-    {
-      _id: req.params.id,
-      removed: false,
-    },
-    {
-      $set: {
-        removed: true,
-      },
-    }
-  ).exec();
+  const deletedInvoice = await prisma.invoice.update({
+    where: { id: req.params.id },
+    data: { removed: true },
+  });
 
-  if (!deletedInvoice) {
-    return res.status(404).json({
-      success: false,
-      result: null,
-      message: 'Invoice not found',
-    });
-  }
-  const paymentsInvoices = await ModelPayment.updateMany(
-    { invoice: deletedInvoice._id },
-    { $set: { removed: true } }
-  );
+  await prisma.payment.updateMany({
+    where: { invoiceId: deletedInvoice.id },
+    data: { removed: true },
+  });
+
   return res.status(200).json({
     success: true,
     result: deletedInvoice,

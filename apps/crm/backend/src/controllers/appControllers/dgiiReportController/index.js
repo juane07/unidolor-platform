@@ -1,10 +1,7 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 const createCRUDController = require('@/controllers/middlewaresControllers/createCRUDController');
 
 const methods = createCRUDController('DgiiReport');
-
-const Invoice = mongoose.model('Invoice');
-const DgiiReport = mongoose.model('DgiiReport');
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -21,17 +18,20 @@ methods.generate = async (req, res) => {
     let totalAmount = 0;
 
     if (tipo === '608') {
-      const invoices = await Invoice.find({
-        removed: false,
-        date: { $gte: startDate, $lte: endDate },
-        status: { $ne: 'cancelled' },
-      }).populate('client').lean();
+      const invoices = await prisma.invoice.findMany({
+        where: {
+          removed: false,
+          date: { gte: startDate, lte: endDate },
+          status: { not: 'cancelled' },
+        },
+        include: { client: true },
+      });
 
       data = invoices.map((inv) => ({
         ncf: inv.ncf || '',
         ncfTipo: inv.ncfTipo || '01',
         regimen: inv.regimen || 'RST',
-        rnc: inv.client?.identity_number || inv.client?.rfc || '',
+        rnc: inv.client?.identity_number || '',
         cliente: inv.client?.name || '',
         fecha: inv.date,
         numero: inv.number,
@@ -44,12 +44,17 @@ methods.generate = async (req, res) => {
     } else if (tipo === '606') {
       return res.status(200).json({ success: true, message: 'Reporte 606 pendiente de implementar (compras)' });
     } else if (tipo === '607') {
-      const Withholding = mongoose.model('Withholding');
-      const whs = await Withholding.find({ removed: false, date: { $gte: startDate, $lte: endDate } }).populate('client').lean();
+      const whs = await prisma.withholding.findMany({
+        where: {
+          removed: false,
+          date: { gte: startDate, lte: endDate },
+        },
+        include: { client: true },
+      });
       data = whs.map((w) => ({
         ncf: w.ncf || '',
         tipo: w.tipo,
-        rnc: w.client?.identity_number || w.client?.rfc || '',
+        rnc: w.client?.identity_number || '',
         cliente: w.client?.name || '',
         base: w.baseAmount,
         porcentaje: w.percentage,
@@ -59,16 +64,18 @@ methods.generate = async (req, res) => {
       totalRecords = whs.length;
       totalAmount = whs.reduce((s, w) => s + (w.amount || 0), 0);
     } else if (tipo === '609') {
-      const invoices = await Invoice.find({
-        removed: false,
-        date: { $gte: startDate, $lte: endDate },
-        status: 'cancelled',
-      }).populate('client').lean();
-
+      const invoices = await prisma.invoice.findMany({
+        where: {
+          removed: false,
+          date: { gte: startDate, lte: endDate },
+          status: 'cancelled',
+        },
+        include: { client: true },
+      });
       data = invoices.map((inv) => ({
         ncf: inv.ncf || '',
         ncfTipo: inv.ncfTipo || '01',
-        rnc: inv.client?.identity_number || inv.client?.rfc || '',
+        rnc: inv.client?.identity_number || '',
         cliente: inv.client?.name || '',
         fecha: inv.date,
         total: inv.total,
@@ -78,15 +85,14 @@ methods.generate = async (req, res) => {
     }
 
     const filename = `${tipo}_${anno}${pad(mes)}.json`;
+    const reportData = { tipo, mes, anno, data, totalRecords, totalAmount, filename, status: 'generated', updated: new Date() };
 
-    const reportData = { tipo, mes, anno, data, totalRecords, totalAmount, filename, status: 'generated', updated: Date.now() };
-
-    const existing = await DgiiReport.findOne({ tipo, mes, anno, removed: false });
+    const existing = await prisma.dgiiReport.findFirst({ where: { tipo, mes, anno, removed: false } });
     let result;
     if (existing) {
-      result = await DgiiReport.findByIdAndUpdate(existing._id, reportData, { new: true });
+      result = await prisma.dgiiReport.update({ where: { id: existing.id }, data: reportData });
     } else {
-      result = await new DgiiReport(reportData).save();
+      result = await prisma.dgiiReport.create({ data: reportData });
     }
 
     return res.status(200).json({ success: true, result, message: `Reporte ${tipo} generado: ${totalRecords} registros` });

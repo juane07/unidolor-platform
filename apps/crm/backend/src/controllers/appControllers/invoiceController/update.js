@@ -1,9 +1,4 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Invoice');
-
-const custom = require('@/controllers/pdfController');
-
+const prisma = require('@/db/prisma');
 const { calculate } = require('@/helpers');
 const schema = require('./schemaValidate');
 
@@ -20,9 +15,8 @@ const update = async (req, res) => {
     });
   }
 
-  const previousInvoice = await Model.findOne({
-    _id: req.params.id,
-    removed: false,
+  const previousInvoice = await prisma.invoice.findFirst({
+    where: { id: req.params.id, removed: false },
   });
 
   if (!previousInvoice) {
@@ -42,7 +36,6 @@ const update = async (req, res) => {
   }
 
   const { credit } = previousInvoice;
-
   const { items = [], taxRate = 0, discount = 0 } = req.body;
 
   if (items.length === 0) {
@@ -53,17 +46,13 @@ const update = async (req, res) => {
     });
   }
 
-  // default
   let subTotal = 0;
   let taxTotal = 0;
   let total = 0;
 
-  //Calculate the items array with subTotal, total, taxTotal
   items.map((item) => {
     let total = calculate.multiply(item['quantity'], item['price']);
-    //sub total
     subTotal = calculate.add(subTotal, total);
-    //item total
     item['total'] = total;
   });
   taxTotal = calculate.multiply(subTotal, taxRate / 100);
@@ -77,17 +66,15 @@ const update = async (req, res) => {
   if (body.hasOwnProperty('currency')) {
     delete body.currency;
   }
-  // Find document by id and updates with the required fields
 
   let paymentStatus =
     calculate.sub(total, discount) === credit ? 'paid' : credit > 0 ? 'partially' : 'unpaid';
   body['paymentStatus'] = paymentStatus;
 
-  const result = await Model.findOneAndUpdate({ _id: req.params.id, removed: false }, body, {
-    new: true, // return the new result instead of the old one
-  }).exec();
-
-  // Returning successfull response
+  const result = await prisma.invoice.update({
+    where: { id: req.params.id, removed: false },
+    data: body,
+  });
 
   return res.status(200).json({
     success: true,

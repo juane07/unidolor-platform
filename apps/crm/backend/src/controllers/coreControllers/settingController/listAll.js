@@ -1,14 +1,12 @@
-const mongoose = require('mongoose');
-const Model = mongoose.model('Setting');
+const prisma = require('@/db/prisma');
 
 const listAll = async (req, res) => {
-  const sort = parseInt(req.query.sort) || 'desc';
+  const sort = req.query.sort || 'desc';
 
-  //  Query the database for a list of all results
-  const result = await Model.find({
-    removed: false,
-    isPrivate: false,
-  }).sort({ created: sort });
+  const result = await prisma.setting.findMany({
+    where: { removed: false, isPrivate: false },
+    orderBy: { created: sort },
+  });
 
   if (result.length > 0) {
     return res.status(200).json({
@@ -16,13 +14,12 @@ const listAll = async (req, res) => {
       result,
       message: 'Successfully found all documents',
     });
-  } else {
-    return res.status(203).json({
-      success: false,
-      result: [],
-      message: 'Collection is Empty',
-    });
   }
+  return res.status(203).json({
+    success: false,
+    result: [],
+    message: 'Collection is Empty',
+  });
 };
 
 module.exports = listAll;

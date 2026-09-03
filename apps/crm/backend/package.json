@@ -12,12 +12,15 @@
     "production": "NODE_ENV=production",
     "setup": "node src/setup/setup.js",
     "upgrade": "node src/setup/upgrade.js",
-    "reset": "node src/setup/reset.js"
+    "reset": "node src/setup/reset.js",
+    "seed": "node prisma/seed.js",
+    "postinstall": "npx prisma generate || exit 0"
   },
   "dependencies": {
-    "@unidolor/core": "workspace:*",
     "@aws-sdk/client-s3": "^3.509.0",
+    "@prisma/client": "^5.22.0",
     "@sparticuz/chromium": "^149.0.0",
+    "@unidolor/core": "workspace:*",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
@@ -33,8 +36,6 @@
     "lodash": "^4.17.21",
     "module-alias": "^2.2.3",
     "moment": "^2.30.1",
-    "mongoose": "^8.1.1",
-    "mongoose-autopopulate": "^1.1.0",
     "multer": "^1.4.4",
     "node-cache": "^5.1.2",
     "openai": "^4.27.0",
@@ -46,6 +47,7 @@
   },
   "devDependencies": {
     "nodemon": "3.0.1",
+    "prisma": "^5.22.0",
     "xlsx": "^0.18.5"
   },
   "_moduleAliases": {

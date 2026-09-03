@@ -1,12 +1,9 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 const createCRUDController = require('@/controllers/middlewaresControllers/createCRUDController');
 const { institutionalConfig } = require('@/config/institutionalConfig');
 const { nextNcf } = require('@/helpers/ncf');
 
 const methods = createCRUDController('Withholding');
-
-const Withholding = mongoose.model('Withholding');
-const Invoice = mongoose.model('Invoice');
 
 const getRetenciones = () => {
   const cfg = institutionalConfig?.configuracionFacturacion;
@@ -29,8 +26,6 @@ methods.create = async (req, res) => {
       return res.status(400).json({ success: false, message: 'tipo debe ser ITBIS o ISR' });
     }
 
-    // Bloqueo ITBIS sobre operaciones exentas (RN-020, R14-A5): los servicios
-    // de salud no generan ITBIS, por lo que no existe monto que retener.
     if (tipo === 'ITBIS') {
       if (exento) {
         return res.status(400).json({
@@ -39,7 +34,7 @@ methods.create = async (req, res) => {
         });
       }
       if (invoice) {
-        const factura = await Invoice.findOne({ _id: invoice, removed: false });
+        const factura = await prisma.invoice.findFirst({ where: { id: invoice, removed: false } });
         if (factura && (Number(factura.taxRate) === 0 || Number(factura.taxTotal) === 0)) {
           return res.status(400).json({
             success: false,
@@ -65,9 +60,9 @@ methods.create = async (req, res) => {
       amount,
       ncf: ncf || req.body.ncf,
     };
-    if (invoice) data.invoice = invoice;
+    if (invoice) data.invoiceId = invoice;
 
-    const result = await Withholding.create(data);
+    const result = await prisma.withholding.create({ data });
     return res.status(201).json({
       success: true,
       result,

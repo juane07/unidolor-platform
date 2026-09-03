@@ -1,0 +1,839 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// CORE MODELS
+// ============================================================
+
+model Admin {
+  id       String   @id @default(cuid())
+  email    String   @unique
+  password String?
+  name     String?
+  role     String   @default("admin")
+  isActive Boolean  @default(true)
+  removed  Boolean  @default(false)
+  created  DateTime @default(now())
+  updated  DateTime @updatedAt
+
+  // Relations
+  createdInvoices        Invoice[]          @relation("InvoiceCreatedBy")
+  createdPayments        Payment[]          @relation("PaymentCreatedBy")
+  createdOpportunities   Opportunity[]      @relation("OpportunityCreatedBy")
+  assignedOpportunities  Opportunity[]      @relation("OpportunityAssignedTo")
+  stageHistoryEntries    StageHistory[]     @relation("StageHistoryBy")
+  createdAppointments    Appointment[]      @relation("AppointmentCreatedBy")
+  createdCases           Case[]             @relation("CaseCreatedBy")
+  createdClinicalRecords ClinicalRecord[]   @relation("ClinicalCreatedBy")
+  createdArsAuth         ArsAuthorization[] @relation("ArsAuthCreatedBy")
+  createdClients         Client[]           @relation("ClientCreatedBy")
+  assignedClients        Client[]           @relation("ClientAssignedTo")
+  consentInstances       ConsentInstance[]  @relation("ConsentCreatedBy")
+  bitacoraEntries        BitacoraEntry[]
+  passwordRecords        AdminPassword[]
+
+  @@map("admins")
+}
+
+model AdminPassword {
+  id             String   @id @default(cuid())
+  password       String
+  salt           String?
+  resetToken     String?
+  emailToken     String?
+  emailVerified  Boolean  @default(false)
+  loggedSessions String[] @default([])
+  removed        Boolean  @default(false)
+  created        DateTime @default(now())
+  updated        DateTime @updatedAt
+
+  adminId String @unique
+  admin   Admin @relation(fields: [adminId], references: [id])
+
+  @@map("admin_passwords")
+}
+
+model Branch {
+  id            String   @id @default(cuid())
+  name          String
+  address       String?
+  city          String?
+  phone         String?
+  contactPerson String?
+  isActive      Boolean  @default(true)
+  removed       Boolean  @default(false)
+  created       DateTime @default(now())
+  updated       DateTime @updatedAt
+
+  // Relations
+  doctors         Doctor[]
+  doctorSchedules DoctorSchedule[]
+  invoices        Invoice[]
+  appointments    Appointment[]
+  ncfSequences    NcfSequence[]
+
+  @@map("branches")
+}
+
+model Client {
+  id             String   @id @default(cuid())
+  name           String
+  type           String   @default("cliente") // cliente | proveedor
+  phone          String?
+  country        String?
+  address        String?
+  email          String?
+  identityNumber String?
+  metadata       Json?
+  removed        Boolean  @default(false)
+  enabled        Boolean  @default(true)
+  created        DateTime @default(now())
+  updated        DateTime @updatedAt
+
+  // Relations
+  createdBy    String?
+  createdById  Admin?  @relation("ClientCreatedBy", fields: [createdBy], references: [id])
+  assignedTo   String?
+  assignedToId Admin?  @relation("ClientAssignedTo", fields: [assignedTo], references: [id])
+
+  appointments      Appointment[]
+  cases             Case[]
+  clinicalRecords   ClinicalRecord[]
+  consentInstances  ConsentInstance[]
+  invoices          Invoice[]
+  payments          Payment[]
+  opportunities     Opportunity[]
+  arsAuthorizations ArsAuthorization[]
+  withholdings      Withholding[]
+
+  @@map("clients")
+}
+
+model Doctor {
+  id             String   @id @default(cuid())
+  name           String
+  specialty      String?
+  phone          String?
+  email          String?
+  commissionRate Float    @default(0)
+  isActive       Boolean  @default(true)
+  removed        Boolean  @default(false)
+  created        DateTime @default(now())
+  updated        DateTime @updatedAt
+
+  // Relations
+  branchId        String?
+  branch          Branch?          @relation(fields: [branchId], references: [id])
+  schedules       DoctorSchedule[]
+  appointments    Appointment[]
+  cases           Case[]
+  clinicalRecords ClinicalRecord[]
+  invoices        Invoice[]
+  payments        Payment[]
+
+  @@map("doctors")
+}
+
+// ============================================================
+// SERVICE CATALOG
+// ============================================================
+
+model Service {
+  id                       String   @id @default(cuid())
+  name                     String
+  cupsCode                 String?
+  simonLevel               String   @default("")
+  aliases                  String[] @default([])
+  description              String?
+  category                 String? // consulta | procedimiento | visita_domicilio | estudio | otro
+  type                     String? // primera_vez | seguimiento | urgencia | visita_domicilio | procedimiento | otro
+  grupoCatalogo            String?
+  modalidad                String? // clinica | domicilio | telemedicina
+  tipoServicio             String? // consulta | procedimiento | diagnostico | enfermeria | hospitalizacion_domiciliaria | programa_especial
+  clasificacion            String[] @default([])
+  prioridadDefault         String? // emergente | urgente | preferente | programado
+  tiempoEstimadoMin        Int      @default(0)
+  requiereConsentimiento   Boolean  @default(false)
+  requiereIndicacionMedica Boolean  @default(false)
+  materiales               String[] @default([])
+  personalRequerido        String[] @default([])
+  preguntasCotizacion      String[] @default([])
+  basePrice                Float    @default(0)
+  isActive                 Boolean  @default(true)
+  catalogCodigo            String?
+  removed                  Boolean  @default(false)
+  enabled                  Boolean  @default(true)
+  created                  DateTime @default(now())
+  updated                  DateTime @updatedAt
+
+  // Relations
+  procedures       Procedure[]
+  consentTemplates ServiceConsentTemplate[]
+  invoiceItems     InvoiceItem[]
+  cases            Case[]
+  clinicalRecords  ClinicalRecord[]
+
+  @@index([catalogCodigo])
+  @@map("services")
+}
+
+model Procedure {
+  id                 String   @id @default(cuid())
+  codigo             String   @unique
+  nombre             String
+  descripcion        String?
+  servicioRef        String // Code of parent service (string, not FK)
+  duracionMin        Int      @default(15)
+  requiereConsent    String? // Template ID string
+  requiereIndicacion Boolean  @default(true)
+  material           String[] @default([])
+  grupoCatalogo      String?
+  modalidad          String? // clinica | domicilio
+  basePrice          Float    @default(0)
+  isActive           Boolean  @default(true)
+  removed            Boolean  @default(false)
+  enabled            Boolean  @default(true)
+  created            DateTime @default(now())
+  updated            DateTime @updatedAt
+
+  // Relations
+  serviceId         String?
+  service           Service?          @relation(fields: [serviceId], references: [id])
+  consentTemplateId String?
+  consentTemplate   ConsentTemplate?  @relation(fields: [consentTemplateId], references: [id])
+  cases             Case[]
+  consentInstances  ConsentInstance[]
+
+  @@index([servicioRef])
+  @@index([grupoCatalogo])
+  @@map("procedures")
+}
+
+// ============================================================
+// INSURANCE
+// ============================================================
+
+model InsuranceCompany {
+  id           String   @id @default(cuid())
+  name         String
+  code         String?
+  contact      String?
+  phone        String?
+  email        String?
+  paymentTerms Int      @default(30)
+  isActive     Boolean  @default(true)
+  removed      Boolean  @default(false)
+  created      DateTime @default(now())
+  updated      DateTime @updatedAt
+
+  plans InsurancePlan[]
+
+  @@map("insurance_companies")
+}
+
+model InsurancePlan {
+  id              String   @id @default(cuid())
+  name            String
+  coveragePercent Float    @default(80)
+  copayPercent    Float    @default(20)
+  isActive        Boolean  @default(true)
+  removed         Boolean  @default(false)
+  created         DateTime @default(now())
+  updated         DateTime @updatedAt
+
+  companyId String
+  company   InsuranceCompany   @relation(fields: [companyId], references: [id])
+  arsAuths  ArsAuthorization[]
+
+  @@map("insurance_plans")
+}
+
+model ArsAuthorization {
+  id                  String    @id @default(cuid())
+  service             String?
+  amount              Float     @default(0)
+  authorizedAmount    Float     @default(0)
+  authorizationNumber String?
+  status              String    @default("pendiente") // pendiente | aprobada | rechazada | vencida
+  validUntil          DateTime?
+  notes               String?
+  removed             Boolean   @default(false)
+  created             DateTime  @default(now())
+  updated             DateTime  @updatedAt
+
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id])
+  planId      String
+  plan        InsurancePlan @relation(fields: [planId], references: [id])
+  createdBy   String?
+  createdById Admin?        @relation("ArsAuthCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([clientId])
+  @@index([planId])
+  @@index([status])
+  @@map("ars_authorizations")
+}
+
+// ============================================================
+// BILLING
+// ============================================================
+
+model NcfSequence {
+  id                String    @id @default(cuid())
+  tipo              String // 01-15 DGII types
+  nombre            String
+  regimen           String    @default("RST") // RST | RDL | RGN
+  secuenciaActual   Int       @default(0)
+  rangoDesde        Int
+  rangoHasta        Int
+  vigenciaDesde     DateTime?
+  vigenciaHasta     DateTime?
+  fechaAutorizacion DateTime?
+  fechaVencimiento  DateTime?
+  isActive          Boolean   @default(true)
+  removed           Boolean   @default(false)
+  created           DateTime  @default(now())
+  updated           DateTime  @updatedAt
+
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  @@map("ncf_sequences")
+}
+
+model Invoice {
+  id            String   @id @default(cuid())
+  number        Int
+  year          Int
+  content       String?
+  recurring     String? // daily | weekly | monthly | annually | quarter
+  date          DateTime
+  expiredDate   DateTime
+  taxRate       Float    @default(0)
+  subTotal      Float    @default(0)
+  taxTotal      Float    @default(0)
+  total         Float    @default(0)
+  currency      String   @default("NA")
+  credit        Float    @default(0)
+  discount      Float    @default(0)
+  paymentStatus String   @default("unpaid") // unpaid | paid | partially
+  isOverdue     Boolean  @default(false)
+  approved      Boolean  @default(false)
+  ncf           String?
+  ncfTipo       String?
+  regimen       String? // RST | RDL | RGN
+  notes         String?
+  status        String   @default("draft") // draft | pending | sent | refunded | cancelled | on hold
+  estadoFiscal  String   @default("borrador") // borrador | emitida | anulada | nota_credito
+  motivo        String?
+  pdf           String?
+  removed       Boolean  @default(false)
+  created       DateTime @default(now())
+  updated       DateTime @updatedAt
+
+  // Relations
+  createdById String
+  createdBy   Admin    @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  doctorId    String?
+  doctor      Doctor?  @relation(fields: [doctorId], references: [id])
+  notaRefId   String?
+  notaRef     Invoice? @relation("InvoiceNotaRef", fields: [notaRefId], references: [id])
+
+  items                  InvoiceItem[]
+  payments               Payment[]
+  ecf                    ECF?
+  withholdings           Withholding[]
+  bitacora               BitacoraEntry[]
+  files                  InvoiceFile[]
+  invoicesNotaRef        Invoice[]       @relation("InvoiceNotaRef")
+  convertedOpportunities Opportunity[]   @relation("InvoiceConvertedFrom")
+
+  @@index([clientId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  cupsCode    String?
+  simonLevel  String?
+  itemName    String
+  description String?
+  quantity    Int     @default(1)
+  price       Float
+  total       Float
+
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  serviceId String?
+  service   Service? @relation(fields: [serviceId], references: [id])
+
+  @@map("invoice_items")
+}
+
+model BitacoraEntry {
+  id      String   @id @default(cuid())
+  accion  String
+  fecha   DateTime @default(now())
+  detalle String?
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  usuarioId String?
+  usuario   Admin?  @relation(fields: [usuarioId], references: [id])
+
+  @@map("bitacora_entries")
+}
+
+model InvoiceFile {
+  id          String  @id @default(cuid())
+  fileId      String?
+  name        String
+  path        String?
+  description String?
+  isPublic    Boolean @default(false)
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_files")
+}
+
+model Payment {
+  id               String   @id @default(cuid())
+  number           Int
+  amount           Float
+  commissionRate   Float    @default(0)
+  commissionAmount Float    @default(0)
+  currency         String   @default("NA")
+  ref              String?
+  description      String?
+  date             DateTime @default(now())
+  removed          Boolean  @default(false)
+  created          DateTime @default(now())
+  updated          DateTime @updatedAt
+
+  createdById String
+  createdBy   Admin   @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  clientId    String
+  client      Client  @relation(fields: [clientId], references: [id])
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id])
+  doctorId    String?
+  doctor      Doctor? @relation(fields: [doctorId], references: [id])
+
+  @@index([clientId])
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+model Withholding {
+  id         String   @id @default(cuid())
+  tipo       String // ITBIS | ISR
+  percentage Float
+  baseAmount Float
+  amount     Float
+  ncf        String?
+  date       DateTime @default(now())
+  status     String   @default("active") // active | cancelled
+  removed    Boolean  @default(false)
+  created    DateTime @default(now())
+  updated    DateTime @updatedAt
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([invoiceId])
+  @@index([tipo])
+  @@map("withholdings")
+}
+
+model ECF {
+  id           String    @id @default(cuid())
+  ncf          String?
+  ncfTipo      String?
+  regimen      String? // RST | RDL | RGN
+  xmlContent   String?
+  signedXml    String?
+  dgiiStatus   String    @default("pending") // pending | submitted | approved | rejected
+  dgiiCode     String?
+  dgiiResponse Json?
+  errorMessage String?
+  attempts     Int       @default(0)
+  submittedAt  DateTime?
+  approvedAt   DateTime?
+  created      DateTime  @default(now())
+  updated      DateTime  @updatedAt
+
+  invoiceId String  @unique
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@map("ecf")
+}
+
+// ============================================================
+// CLINICAL
+// ============================================================
+
+model Appointment {
+  id             String   @id @default(cuid())
+  date           DateTime
+  startTime      String?
+  endTime        String?
+  duration       Int      @default(30)
+  type           String? // primera_vez | seguimiento | urgencia | visita_domiciliaria
+  serviceName    String?
+  policyNumber   String?
+  sector         String?
+  familyName     String?
+  familyIdNumber String?
+  familyPhone    String?
+  familyDomicile String?
+  familyEmail    String?
+  pdf            String?
+  status         String   @default("programada") // programada | realizada | cancelada | no_asistio
+  notes          String?
+  removed        Boolean  @default(false)
+  created        DateTime @default(now())
+  updated        DateTime @updatedAt
+
+  clientId      String
+  client        Client       @relation(fields: [clientId], references: [id])
+  doctorId      String
+  doctor        Doctor       @relation(fields: [doctorId], references: [id])
+  branchId      String?
+  branch        Branch?      @relation(fields: [branchId], references: [id])
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id])
+  createdBy     String?
+  createdById   Admin?       @relation("AppointmentCreatedBy", fields: [createdBy], references: [id])
+
+  clinicalRecords ClinicalRecord[]
+
+  @@index([clientId, date])
+  @@index([doctorId, date])
+  @@map("appointments")
+}
+
+model Case {
+  id                  String   @id @default(cuid())
+  caseNumber          String   @unique // CASO-YYYY-NNNN
+  title               String?
+  servicioCodigo      String?
+  servicioLabel       String?
+  procedimientoCodigo String?
+  procedimientoLabel  String?
+  status              String   @default("abierto") // abierto | en_evaluacion | planificado | en_proceso | completado | cancelado | seguimiento
+  source              String? // whatsapp | telefono | web | referido | otro
+  canalContacto       String?
+  notes               String[] @default([])
+  removed             Boolean  @default(false)
+  created             DateTime @default(now())
+  updated             DateTime @updatedAt
+
+  clientId        String
+  client          Client       @relation(fields: [clientId], references: [id])
+  opportunityId   String?
+  opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
+  doctorId        String?
+  doctor          Doctor?      @relation(fields: [doctorId], references: [id])
+  servicioId      String?
+  servicio        Service?     @relation(fields: [servicioId], references: [id])
+  procedimientoId String?
+  procedimiento   Procedure?   @relation(fields: [procedimientoId], references: [id])
+  createdBy       String?
+  createdById     Admin?       @relation("CaseCreatedBy", fields: [createdBy], references: [id])
+
+  // Embedded objects as JSON
+  motivoContacto  Json? // { tipo, descripcion, ubicacionDolor, intensidadDolor }
+  planMedico      Json? // { diagnostico, tratamiento, observaciones, medicoTratante }
+  consentimientos Json[] @default([]) // [{ templateId, instanceId, requerido, firmado, fechaFirma }]
+  requisitos      Json? // { indicacionMedica, ordenMedica, fotosRequeridas, documentosAdicionales }
+  seguimiento     Json? // { proximaVisita, frecuencia, observaciones }
+
+  consentInstances ConsentInstance[]
+
+  @@index([clientId, status])
+  @@index([caseNumber])
+  @@index([status, created])
+  @@map("cases")
+}
+
+model ClinicalRecord {
+  id                        String   @id @default(cuid())
+  serviceName               String?
+  modalidad                 String? // clinica | domicilio | telemedicina
+  tipoServicio              String? // consulta | procedimiento | diagnostico | enfermeria | hospitalizacion_domiciliaria | programa_especial
+  date                      DateTime @default(now())
+  hora                      String?
+  motivoConsulta            String?
+  enfermedadActual          String?
+  antecedentes              String?
+  alergias                  String[] @default([])
+  examenFisico              String?
+  estudiosDisponibles       String?
+  diagnosticosDiferenciales String?
+  objetivosTerapeuticos     String?
+  plan                      String?
+  seguimiento               String?
+  diagnosis                 String?
+  treatment                 String?
+  prescription              String?
+  evolutionNotes            String?
+  removed                   Boolean  @default(false)
+  created                   DateTime @default(now())
+  updated                   DateTime @updatedAt
+
+  clientId      String
+  client        Client       @relation(fields: [clientId], references: [id])
+  doctorId      String?
+  doctor        Doctor?      @relation(fields: [doctorId], references: [id])
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  serviceId     String?
+  service       Service?     @relation(fields: [serviceId], references: [id])
+  createdBy     String?
+  createdById   Admin?       @relation("ClinicalCreatedBy", fields: [createdBy], references: [id])
+
+  // Embedded as JSON
+  dolor                Json? // dolorSchema
+  medicamentosActuales Json[] @default([]) // medicamentoSchema[]
+  procedimientos       Json[] @default([]) // procedimientoSchema[]
+  complicaciones       Json[] @default([]) // complicacionSchema[]
+  enfermeria           Json? // enfermeria object
+
+  @@index([clientId, date])
+  @@index([doctorId, date])
+  @@index([serviceId])
+  @@map("clinical_records")
+}
+
+// ============================================================
+// CONSENT
+// ============================================================
+
+model ConsentTemplate {
+  id              String   @id @default(cuid())
+  templateId      String   @unique
+  nombre          String
+  version         String
+  fecha           String?
+  html            String
+  camposVariables Json[]   @default([]) // [{ id, label, tipo }]
+  obligatorio     Boolean  @default(false)
+  aplicaA         String[] @default([])
+  removed         Boolean  @default(false)
+  enabled         Boolean  @default(true)
+  created         DateTime @default(now())
+  updated         DateTime @updatedAt
+
+  procedures       Procedure[]
+  serviceLinks     ServiceConsentTemplate[]
+  consentInstances ConsentInstance[]
+
+  @@map("consent_templates")
+}
+
+model ConsentInstance {
+  id               String    @id @default(cuid())
+  templateId       String
+  templateVersion  String
+  htmlFirmado      String
+  firmante         Json? // { nombre, cedula, parentesco }
+  status           String    @default("pendiente") // pendiente | firmado | rechazado | vencido
+  fechaFirma       DateTime?
+  fechaVencimiento DateTime?
+  metodoFirma      String? // whatsapp | web | presencial | otro
+  ipAddress        String?
+  userAgent        String?
+  removed          Boolean   @default(false)
+  created          DateTime  @default(now())
+  updated          DateTime  @updatedAt
+
+  templateIdRef   String
+  template        ConsentTemplate @relation(fields: [templateIdRef], references: [id])
+  clientId        String
+  client          Client          @relation(fields: [clientId], references: [id])
+  caseId          String?
+  case            Case?           @relation(fields: [caseId], references: [id])
+  procedimientoId String?
+  procedimiento   Procedure?      @relation(fields: [procedimientoId], references: [id])
+  createdBy       String?
+  createdById     Admin?          @relation("ConsentCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([clientId, templateId])
+  @@index([caseId])
+  @@index([status, created])
+  @@map("consent_instances")
+}
+
+model ServiceConsentTemplate {
+  id         String          @id @default(cuid())
+  serviceId  String
+  service    Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  templateId String
+  template   ConsentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, templateId])
+  @@map("service_consent_templates")
+}
+
+// ============================================================
+// SUPPORT MODELS
+// ============================================================
+
+model Opportunity {
+  id       String   @id @default(cuid())
+  stage    String   @default("cotizacion")
+  service  String?
+  source   String? // whatsapp | manual | web | referido
+  notes    String?
+  amount   Float    @default(0)
+  removed  Boolean  @default(false)
+  metadata Json?
+  created  DateTime @default(now())
+  updated  DateTime @updatedAt
+
+  clientId             String
+  client               Client   @relation(fields: [clientId], references: [id])
+  assignedToId         String?
+  assignedTo           Admin?   @relation("OpportunityAssignedTo", fields: [assignedToId], references: [id])
+  createdBy            String?
+  createdById          Admin?   @relation("OpportunityCreatedBy", fields: [createdBy], references: [id])
+  convertedToInvoiceId String?
+  convertedToInvoice   Invoice? @relation("InvoiceConvertedFrom", fields: [convertedToInvoiceId], references: [id])
+
+  appointments Appointment[]
+  cases        Case[]
+  stageHistory StageHistory[]
+
+  @@index([clientId])
+  @@index([stage])
+  @@map("opportunities")
+}
+
+model StageHistory {
+  id        String   @id @default(cuid())
+  fromStage String
+  toStage   String
+  at        DateTime @default(now())
+
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  byId          String?
+  by            Admin?      @relation("StageHistoryBy", fields: [byId], references: [id])
+
+  @@map("stage_history")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String
+  title     String
+  message   String?
+  isRead    Boolean  @default(false)
+  link      String?
+  modelId   String? // Generic ref (polymorphic)
+  modelType String? // Table name for polymorphic ref
+  removed   Boolean  @default(false)
+  created   DateTime @default(now())
+  updated   DateTime @updatedAt
+
+  @@map("notifications")
+}
+
+model DgiiReport {
+  id           String    @id @default(cuid())
+  tipo         String // 606 | 607 | 608 | 609
+  mes          Int
+  anno         Int
+  status       String    @default("draft") // draft | generated | filed
+  data         Json?
+  totalRecords Int       @default(0)
+  totalAmount  Float     @default(0)
+  filename     String?
+  filedAt      DateTime?
+  removed      Boolean   @default(false)
+  created      DateTime  @default(now())
+  updated      DateTime  @updatedAt
+
+  @@map("dgii_reports")
+}
+
+model Setting {
+  id              String   @id @default(cuid())
+  settingCategory String
+  settingKey      String   @unique
+  settingValue    Json?
+  valueType       String   @default("String")
+  isPrivate       Boolean  @default(false)
+  isCoreSetting   Boolean  @default(false)
+  enabled         Boolean  @default(true)
+  removed         Boolean  @default(false)
+  created         DateTime @default(now())
+  updated         DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model InstitutionalFAQ {
+  id                       String   @id @default(cuid())
+  categoria                String
+  subcategoria             String?
+  pregunta                 String
+  respuesta                String
+  audiencia                String[]
+  tags                     String[]
+  prioridad                Int      @default(0)
+  fuente                   String   @default("Cerebro/09_FAQ.md")
+  version                  String   @default("1.0")
+  validadoEnConversaciones Int      @default(0)
+  ultimaActualizacion      DateTime @default(now())
+  actualizadoPor           String   @default("sistema")
+  enabled                  Boolean  @default(true)
+  removed                  Boolean  @default(false)
+  created                  DateTime @default(now())
+  updated                  DateTime @updatedAt
+
+  @@index([categoria, subcategoria, prioridad])
+  @@index([audiencia, enabled, removed])
+  @@index([tags, enabled, removed])
+  @@map("institutional_faqs")
+}
+
+model DoctorSchedule {
+  id               String    @id @default(cuid())
+  dayOfWeek        Int // 0-6
+  startTime        String // HH:MM
+  endTime          String // HH:MM
+  slotDuration     Int       @default(30)
+  appointmentTypes String[]  @default([])
+  priority         Int       @default(10)
+  validFrom        DateTime?
+  validUntil       DateTime?
+  exceptions       Json[]    @default([]) // [{ date, isAvailable, reason }]
+  removed          Boolean   @default(false)
+  created          DateTime  @default(now())
+  updated          DateTime  @updatedAt
+
+  doctorId String
+  doctor   Doctor @relation(fields: [doctorId], references: [id])
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([doctorId, dayOfWeek, startTime])
+  @@index([branchId, dayOfWeek])
+  @@map("doctor_schedules")
+}

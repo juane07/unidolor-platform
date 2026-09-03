@@ -1,7 +1,4 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Invoice');
-
+const prisma = require('@/db/prisma');
 const { calculate } = require('@/helpers');
 const { increaseBySettingKey } = require('@/middlewares/settings');
 const schema = require('./schemaValidate');
@@ -22,17 +19,13 @@ const create = async (req, res) => {
 
   const { items = [], taxRate = 0, discount = 0 } = value;
 
-  // default
   let subTotal = 0;
   let taxTotal = 0;
   let total = 0;
 
-  //Calculate the items array with subTotal, total, taxTotal
   items.map((item) => {
     let total = calculate.multiply(item['quantity'], item['price']);
-    //sub total
     subTotal = calculate.add(subTotal, total);
-    //item total
     item['total'] = total;
   });
   taxTotal = calculate.multiply(subTotal, taxRate / 100);
@@ -47,7 +40,6 @@ const create = async (req, res) => {
   let cuerpo = { ...body };
 
   if (body.asignarNcf === false) {
-    // Sin NCF: se guarda como borrador (no es comprobante fiscal, RN-023)
     cuerpo.estadoFiscal = 'borrador';
   } else {
     const reservado = await nextNcf(ncfTipo, body.branch || null);
@@ -60,33 +52,31 @@ const create = async (req, res) => {
   let paymentStatus = calculate.sub(cuerpo.total, discount) === 0 ? 'paid' : 'unpaid';
 
   cuerpo['paymentStatus'] = paymentStatus;
-  cuerpo['createdBy'] = req.admin._id;
-  cuerpo['bitacora'] = [
-    {
-      accion: 'creacion',
-      usuario: req.admin._id,
-      fecha: new Date(),
-      detalle: cuerpo.estadoFiscal === 'emitida' ? 'Factura emitida con NCF ' + cuerpo.ncf : 'Factura creada como borrador',
+  cuerpo['createdById'] = req.admin.id;
+
+  const result = await prisma.invoice.create({
+    data: {
+      ...cuerpo,
+      createdById: req.admin.id,
+      bitacora: [
+        {
+          accion: 'creacion',
+          usuario: req.admin.id,
+          fecha: new Date(),
+          detalle: cuerpo.estadoFiscal === 'emitida' ? 'Factura emitida con NCF ' + cuerpo.ncf : 'Factura creada como borrador',
+        },
+      ],
     },
-  ];
-
-  // Creating a new document in the collection
-  const result = await new Model(cuerpo).save();
-  const fileId = 'invoice-' + result._id + '.pdf';
-  const updateResult = await Model.findOneAndUpdate(
-    { _id: result._id },
-    { pdf: fileId },
-    {
-      new: true,
-    }
-  ).exec();
-  // Returning successfull response
-
-  increaseBySettingKey({
-    settingKey: 'last_invoice_number',
   });
 
-  // Returning successfull response
+  const fileId = 'invoice-' + result.id + '.pdf';
+  const updateResult = await prisma.invoice.update({
+    where: { id: result.id },
+    data: { pdf: fileId },
+  });
+
+  increaseBySettingKey({ settingKey: 'last_invoice_number' });
+
   return res.status(200).json({
     success: true,
     result: updateResult,

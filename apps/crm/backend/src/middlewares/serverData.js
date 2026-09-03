@@ -1,12 +1,21 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
+
+const modelMap = {
+  Setting: prisma.setting,
+  Notification: prisma.notification,
+  Branch: prisma.branch,
+  Doctor: prisma.doctor,
+  Client: prisma.client,
+};
+
 exports.getData = ({ model }) => {
-  const Model = mongoose.model(model);
-  const result = Model.find({ removed: false, enabled: true });
-  return result;
+  const prismaModel = modelMap[model];
+  if (!prismaModel) return Promise.resolve([]);
+  return prismaModel.findMany({ where: { removed: false, isActive: true } });
 };
 
 exports.getOne = ({ model, id }) => {
-  const Model = mongoose.model(model);
-  const result = Model.findOne({ _id: id, removed: false });
-  return result;
+  const prismaModel = modelMap[model];
+  if (!prismaModel) return Promise.resolve(null);
+  return prismaModel.findFirst({ where: { id, removed: false } });
 };

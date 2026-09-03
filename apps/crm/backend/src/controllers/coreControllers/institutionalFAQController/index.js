@@ -1,47 +1,48 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 
 const listFAQ = async (req, res) => {
   try {
-    const InstitutionalFAQ = mongoose.model('InstitutionalFAQ');
-    
-    const { 
-      categoria, 
-      subcategoria, 
-      audiencia, 
-      tags, 
-      search, 
-      enabled,
-      removed,
-      page = 1,
-      limit = 50,
-      sortBy = 'prioridad',
-      sortOrder = 'asc'
+    const {
+      categoria, subcategoria, audiencia, tags, search,
+      enabled, removed, page = 1, limit = 50,
+      sortBy = 'prioridad', sortOrder = 'asc',
     } = req.query;
 
     const parseBool = (v, def) => (v === undefined || v === null || v === '') ? def : v === 'true' || v === true;
-    const query = {
+    const where = {
       enabled: parseBool(enabled, true),
       removed: parseBool(removed, false),
     };
-    
-    if (categoria) query.categoria = categoria;
-    if (subcategoria) query.subcategoria = subcategoria;
-    if (audiencia) query.audiencia = { $in: Array.isArray(audiencia) ? audiencia : [audiencia] };
-    if (tags) query.tags = { $in: Array.isArray(tags) ? tags : [tags] };
-    if (search) query.$text = { $search: search };
-    
+
+    if (categoria) where.categoria = categoria;
+    if (subcategoria) where.subcategoria = subcategoria;
+    if (audiencia) where.audiencia = { hasSome: Array.isArray(audiencia) ? audiencia : [audiencia] };
+    if (tags) where.tags = { hasSome: Array.isArray(tags) ? tags : [tags] };
+    if (search) {
+      where.OR = [
+        { pregunta: { contains: search, mode: 'insensitive' } },
+        { respuesta: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
-    
+    const orderBy = { [sortBy]: sortOrder === 'desc' ? 'desc' : 'asc' };
+
     const [faqs, total] = await Promise.all([
-      InstitutionalFAQ.find(query)
-        .sort(sort)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .select('categoria subcategoria pregunta respuesta audiencia tags validadoEnConversaciones prioridad created updated'),
-      InstitutionalFAQ.countDocuments(query)
+      prisma.institutionalFAQ.findMany({
+        where,
+        skip,
+        take: parseInt(limit),
+        orderBy,
+        select: {
+          id: true, categoria: true, subcategoria: true, pregunta: true,
+          respuesta: true, audiencia: true, tags: true,
+          validadoEnConversaciones: true, prioridad: true, created: true, updated: true,
+        },
+      }),
+      prisma.institutionalFAQ.count({ where }),
     ]);
-    
+
     return res.status(200).json({
       success: true,
       result: faqs,
@@ -49,9 +50,9 @@ const listFAQ = async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total,
-        pages: Math.ceil(total / parseInt(limit))
+        pages: Math.ceil(total / parseInt(limit)),
       },
-      message: 'FAQs obtenidos correctamente'
+      message: 'FAQs obtenidos correctamente',
     });
   } catch (error) {
     console.error('Error listFAQ:', error);
@@ -59,30 +60,28 @@ const listFAQ = async (req, res) => {
       success: false,
       result: null,
       message: 'Error al obtener FAQs',
-      error: error.message
+      error: error.message,
     });
   }
 };
 
 const getFAQById = async (req, res) => {
   try {
-    const InstitutionalFAQ = mongoose.model('InstitutionalFAQ');
     const { id } = req.params;
-    
-    const faq = await InstitutionalFAQ.findById(id).select('-__v');
-    
+    const faq = await prisma.institutionalFAQ.findUnique({ where: { id } });
+
     if (!faq) {
       return res.status(404).json({
         success: false,
         result: null,
-        message: 'FAQ no encontrado'
+        message: 'FAQ no encontrado',
       });
     }
-    
+
     return res.status(200).json({
       success: true,
       result: faq,
-      message: 'FAQ obtenido correctamente'
+      message: 'FAQ obtenido correctamente',
     });
   } catch (error) {
     console.error('Error getFAQById:', error);
@@ -90,43 +89,52 @@ const getFAQById = async (req, res) => {
       success: false,
       result: null,
       message: 'Error al obtener FAQ',
-      error: error.message
+      error: error.message,
     });
   }
 };
 
 const searchFAQ = async (req, res) => {
   try {
-    const InstitutionalFAQ = mongoose.model('InstitutionalFAQ');
     const { q, audiencia, limit = 10 } = req.query;
-    
+
     if (!q) {
       return res.status(400).json({
         success: false,
         result: null,
-        message: 'Parámetro q (query) requerido'
+        message: 'Parámetro q (query) requerido',
       });
     }
-    
-    const query = { 
-      enabled: true, 
+
+    const where = {
+      enabled: true,
       removed: false,
-      $text: { $search: q }
+      OR: [
+        { pregunta: { contains: q, mode: 'insensitive' } },
+        { respuesta: { contains: q, mode: 'insensitive' } },
+        { tags: { has: q } },
+      ],
     };
-    
+
     if (audiencia) {
-      query.audiencia = { $in: Array.isArray(audiencia) ? audiencia : [audiencia] };
+      where.audiencia = { hasSome: Array.isArray(audiencia) ? audiencia : [audiencia] };
     }
-    
-    const faqs = await InstitutionalFAQ.find(query, { score: { $meta: 'textScore' } })
-      .sort({ score: { $meta: 'textScore' }, prioridad: 1 })
-      .limit(parseInt(limit))
-      .select('categoria subcategoria pregunta respuesta audiencia tags validadoEnConversaciones');
-    
+
+    const faqs = await prisma.institutionalFAQ.findMany({
+      where,
+      take: parseInt(limit),
+      orderBy: { prioridad: 'asc' },
+      select: {
+        id: true, categoria: true, subcategoria: true, pregunta: true,
+        respuesta: true, audiencia: true, tags: true,
+        validadoEnConversaciones: true,
+      },
+    });
+
     return res.status(200).json({
       success: true,
       result: faqs,
-      message: 'Búsqueda completada'
+      message: 'Búsqueda completada',
     });
   } catch (error) {
     console.error('Error searchFAQ:', error);
@@ -134,25 +142,29 @@ const searchFAQ = async (req, res) => {
       success: false,
       result: null,
       message: 'Error en búsqueda',
-      error: error.message
+      error: error.message,
     });
   }
 };
 
 const getCategorias = async (req, res) => {
   try {
-    const InstitutionalFAQ = mongoose.model('InstitutionalFAQ');
-    
-    const categorias = await InstitutionalFAQ.aggregate([
-      { $match: { enabled: true, removed: false } },
-      { $group: { _id: '$categoria', count: { $sum: 1 }, subcategorias: { $addToSet: '$subcategoria' } } },
-      { $sort: { _id: 1 } }
-    ]);
-    
+    const categorias = await prisma.institutionalFAQ.groupBy({
+      by: ['categoria'],
+      where: { enabled: true, removed: false },
+      _count: { id: true },
+      orderBy: { categoria: 'asc' },
+    });
+
+    const result = categorias.map((c) => ({
+      _id: c.categoria,
+      count: c._count.id,
+    }));
+
     return res.status(200).json({
       success: true,
-      result: categorias,
-      message: 'Categorías obtenidas'
+      result,
+      message: 'Categorías obtenidas',
     });
   } catch (error) {
     console.error('Error getCategorias:', error);
@@ -160,7 +172,7 @@ const getCategorias = async (req, res) => {
       success: false,
       result: null,
       message: 'Error al obtener categorías',
-      error: error.message
+      error: error.message,
     });
   }
 };

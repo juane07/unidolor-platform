@@ -1,11 +1,7 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 const createCRUDController = require('@/controllers/middlewaresControllers/createCRUDController');
 
 const methods = createCRUDController('ECF');
-
-const Invoice = mongoose.model('Invoice');
-const Client = mongoose.model('Client');
-const ECF = mongoose.model('ECF');
 
 function generateEncfString(tipo, secuencia, regimen, rnc, fecha) {
   const y = String(fecha.getFullYear());
@@ -50,7 +46,7 @@ function generateXml(invoice, client, ncf, tipo, regimen) {
     <LugarDeEmision>1</LugarDeEmision>
     <RegimenSpecial>${regimen}</RegimenSpecial>
     <NumeroComprobanteFiscal>${ncf}</NumeroComprobanteFiscal>
-    <RncCliente>${client.identity_number || client.rfc || ''}</RncCliente>
+    <RncCliente>${client.identity_number || ''}</RncCliente>
     <RazonSocialCliente>${client.name || ''}</RazonSocialCliente>
     <FechaEmision>${y}-${m}-${d}</FechaEmision>
     <Moneda>${invoice.currency || 'DOP'}</Moneda>
@@ -70,10 +66,10 @@ methods.submit = async (req, res) => {
     const { invoiceId } = req.body;
     if (!invoiceId) return res.status(400).json({ success: false, message: 'invoiceId is required' });
 
-    const invoice = await Invoice.findOne({ _id: invoiceId, removed: false });
+    const invoice = await prisma.invoice.findFirst({ where: { id: invoiceId, removed: false } });
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
 
-    const client = await Client.findOne({ _id: invoice.client, removed: false });
+    const client = await prisma.client.findFirst({ where: { id: invoice.clientId, removed: false } });
     if (!client) return res.status(404).json({ success: false, message: 'Client not found' });
 
     const ncf = invoice.ncf;
@@ -82,7 +78,7 @@ methods.submit = async (req, res) => {
 
     if (!ncf) return res.status(400).json({ success: false, message: 'Invoice has no NCF assigned' });
 
-    const existing = await ECF.findOne({ invoice: invoiceId, removed: false });
+    const existing = await prisma.eCF.findFirst({ where: { invoiceId, removed: false } });
     if (existing && existing.dgiiStatus === 'approved') {
       return res.status(400).json({ success: false, message: 'Invoice already approved by DGII' });
     }
@@ -90,13 +86,13 @@ methods.submit = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invoice already submitted to DGII' });
     }
 
-    const rnc = client.identity_number || client.rfc || '';
+    const rnc = client.identity_number || '';
     const encf = generateEncfString(tipo, parseInt(ncf.slice(2), 10), regimen, rnc, new Date());
     const xmlContent = generateXml(invoice, client, ncf, tipo, regimen);
     const signedXml = `<!-- Firma digital pendiente de implementar -->\n${xmlContent}`;
 
     const ecfData = {
-      invoice: invoiceId,
+      invoiceId,
       ncf,
       ncfTipo: tipo,
       regimen,
@@ -110,9 +106,12 @@ methods.submit = async (req, res) => {
 
     let result;
     if (existing) {
-      result = await ECF.findByIdAndUpdate(existing._id, { ...ecfData, updated: Date.now() }, { new: true });
+      result = await prisma.eCF.update({
+        where: { id: existing.id },
+        data: { ...ecfData, updated: new Date() },
+      });
     } else {
-      result = await new ECF(ecfData).save();
+      result = await prisma.eCF.create({ data: ecfData });
     }
 
     return res.status(200).json({

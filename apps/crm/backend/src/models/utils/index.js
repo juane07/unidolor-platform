@@ -1,49 +1,55 @@
-const { basename, extname } = require('path');
-const { globSync } = require('glob');
+const prisma = require('@/db/prisma');
 
-const appModelsFiles = globSync('./src/models/appModels/**/*.js');
+// Maps Mongoose model names to Prisma model accessors and table names
+const modelMap = {
+  Admin: { prisma: prisma.admin, table: 'admins' },
+  AdminPassword: { prisma: prisma.adminPassword, table: 'admin_passwords' },
+  Branch: { prisma: prisma.branch, table: 'branches' },
+  Client: { prisma: prisma.client, table: 'clients' },
+  Doctor: { prisma: prisma.doctor, table: 'doctors' },
+  Service: { prisma: prisma.service, table: 'services' },
+  Procedure: { prisma: prisma.procedure, table: 'procedures' },
+  InsuranceCompany: { prisma: prisma.insuranceCompany, table: 'insurance_companies' },
+  InsurancePlan: { prisma: prisma.insurancePlan, table: 'insurance_plans' },
+  ArsAuthorization: { prisma: prisma.arsAuthorization, table: 'ars_authorizations' },
+  NcfSequence: { prisma: prisma.ncfSequence, table: 'ncf_sequences' },
+  Invoice: { prisma: prisma.invoice, table: 'invoices' },
+  InvoiceItem: { prisma: prisma.invoiceItem, table: 'invoice_items' },
+  Payment: { prisma: prisma.payment, table: 'payments' },
+  Withholding: { prisma: prisma.withholding, table: 'withholdings' },
+  ECF: { prisma: prisma.eCF, table: 'ecf' },
+  Appointment: { prisma: prisma.appointment, table: 'appointments' },
+  Case: { prisma: prisma.case, table: 'cases' },
+  ClinicalRecord: { prisma: prisma.clinicalRecord, table: 'clinical_records' },
+  ConsentTemplate: { prisma: prisma.consentTemplate, table: 'consent_templates' },
+  ConsentInstance: { prisma: prisma.consentInstance, table: 'consent_instances' },
+  Opportunity: { prisma: prisma.opportunity, table: 'opportunities' },
+  Notification: { prisma: prisma.notification, table: 'notifications' },
+  DgiiReport: { prisma: prisma.dgiiReport, table: 'dgii_reports' },
+  DoctorSchedule: { prisma: prisma.doctorSchedule, table: 'doctor_schedules' },
+  Setting: { prisma: prisma.setting, table: 'settings' },
+  Upload: { prisma: null, table: 'uploads' },
+  InstitutionalFAQ: { prisma: prisma.institutionalFAQ, table: 'institutional_faqs' },
+};
 
-const pattern = './src/models/**/*.js';
+// Models that existed in Mongoose and are mapped
+const modelsFiles = Object.keys(modelMap);
 
-const modelsFiles = globSync(pattern).map((filePath) => {
-  const fileNameWithExtension = basename(filePath);
-  const fileNameWithoutExtension = fileNameWithExtension.replace(
-    extname(fileNameWithExtension),
-    ''
-  );
-  return fileNameWithoutExtension;
-});
-
-const constrollersList = [];
-const appModelsList = [];
-const entityList = [];
+// Build routesList like the original
 const routesList = [];
-
-for (const filePath of appModelsFiles) {
-  const fileNameWithExtension = basename(filePath);
-  const fileNameWithoutExtension = fileNameWithExtension.replace(
-    extname(fileNameWithExtension),
-    ''
-  );
-  const firstChar = fileNameWithoutExtension.charAt(0);
-  const modelName = fileNameWithoutExtension.replace(firstChar, firstChar.toUpperCase());
-  const fileNameLowerCaseFirstChar = fileNameWithoutExtension.replace(
-    firstChar,
-    firstChar.toLowerCase()
-  );
-  const entity = fileNameWithoutExtension.toLowerCase();
-
-  controllerName = fileNameLowerCaseFirstChar + 'Controller';
-  constrollersList.push(controllerName);
-  appModelsList.push(modelName);
-  entityList.push(entity);
-
-  const route = {
-    entity: entity,
-    modelName: modelName,
-    controllerName: controllerName,
-  };
-  routesList.push(route);
+for (const modelName of modelsFiles) {
+  if (modelName === 'Admin' || modelName === 'AdminPassword' || modelName === 'Setting' || modelName === 'Upload' || modelName === 'InstitutionalFAQ') continue;
+  const firstChar = modelName.charAt(0);
+  const fileNameLowerCaseFirstChar = modelName.replace(firstChar, firstChar.toLowerCase());
+  const entity = modelName.toLowerCase();
+  const controllerName = fileNameLowerCaseFirstChar + 'Controller';
+  routesList.push({ entity, modelName, controllerName });
 }
 
-module.exports = { constrollersList, appModelsList, modelsFiles, entityList, routesList };
+const getPrismaModel = (modelName) => {
+  const entry = modelMap[modelName];
+  if (!entry) throw new Error(`Model ${modelName} not found in modelMap`);
+  return entry.prisma;
+};
+
+module.exports = { modelMap, modelsFiles, routesList, getPrismaModel };

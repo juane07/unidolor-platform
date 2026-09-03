@@ -5,7 +5,7 @@
 | Servicio | Plataforma | URL | Estado |
 |----------|------------|-----|--------|
 | Chatbot WhatsApp | Cloudflare Workers | https://unidolor-bot.unidolor.workers.dev | ✅ Activo |
-| CRM (Backend + Frontend) | Render.com (free) | https://unidolor-crm.onrender.com | ⏳ Pendiente deploy |
+| CRM (Backend + Frontend) | Render.com (free) | https://unidolor-crm.onrender.com | ✅ Activo |
 | Base de Datos | MongoDB Atlas (free) | mongodb+srv://... | ✅ Activo |
 
 ## Credenciales

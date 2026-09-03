@@ -1,22 +1,31 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 
 const listUnread = async (req, res) => {
-  const Model = mongoose.model('Notification');
-  const items = await Model.find({ removed: false, isRead: false }).sort({ created: -1 }).limit(20);
-  const count = await Model.countDocuments({ removed: false, isRead: false });
+  const items = await prisma.notification.findMany({
+    where: { removed: false, isRead: false },
+    orderBy: { created: 'desc' },
+    take: 20,
+  });
+  const count = await prisma.notification.count({
+    where: { removed: false, isRead: false },
+  });
   return res.json({ success: true, result: items, count });
 };
 
 const markRead = async (req, res) => {
-  const Model = mongoose.model('Notification');
   const { id } = req.params;
-  await Model.findByIdAndUpdate(id, { isRead: true, updated: Date.now() });
+  await prisma.notification.update({
+    where: { id },
+    data: { isRead: true, updated: new Date() },
+  });
   return res.json({ success: true });
 };
 
 const markAllRead = async (req, res) => {
-  const Model = mongoose.model('Notification');
-  await Model.updateMany({ removed: false, isRead: false }, { isRead: true, updated: Date.now() });
+  await prisma.notification.updateMany({
+    where: { removed: false, isRead: false },
+    data: { isRead: true, updated: new Date() },
+  });
   return res.json({ success: true });
 };
 

@@ -1,19 +1,21 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const Joi = require('joi');
-const mongoose = require('mongoose');
-
+const prisma = require('@/db/prisma');
 const shortid = require('shortid');
 
 const resetPassword = async (req, res, { userModel }) => {
-  const UserPassword = mongoose.model(userModel + 'Password');
-  const User = mongoose.model(userModel);
   const { password, userId, resetToken } = req.body;
 
-  const databasePassword = await UserPassword.findOne({ user: userId, removed: false });
-  const user = await User.findOne({ _id: userId, removed: false }).exec();
+  const databasePassword = await prisma.adminPassword.findFirst({
+    where: { adminId: userId, removed: false },
+  });
 
-  if (!user.enabled)
+  const user = await prisma.admin.findFirst({
+    where: { id: userId, removed: false },
+  });
+
+  if (!user || !user.isActive)
     return res.status(409).json({
       success: false,
       result: null,
@@ -28,14 +30,13 @@ const resetPassword = async (req, res, { userModel }) => {
     });
 
   const isMatch = resetToken === databasePassword.resetToken;
-  if (!isMatch || databasePassword.resetToken === undefined || databasePassword.resetToken === null)
+  if (!isMatch || !databasePassword.resetToken)
     return res.status(403).json({
       success: false,
       result: null,
       message: 'Invalid reset token',
     });
 
-  // validate
   const objectSchema = Joi.object({
     password: Joi.string().required(),
     userId: Joi.string().required(),
@@ -57,57 +58,34 @@ const resetPassword = async (req, res, { userModel }) => {
   const hashedPassword = bcrypt.hashSync(salt + password);
   const emailToken = shortid.generate();
 
-  const token = jwt.sign(
-    {
-      id: userId,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: '24h' }
-  );
+  const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '24h' });
 
-  await UserPassword.findOneAndUpdate(
-    { user: userId },
-    {
-      $push: { loggedSessions: token },
+  await prisma.adminPassword.update({
+    where: { id: databasePassword.id },
+    data: {
+      loggedSessions: { push: token },
       password: hashedPassword,
       salt: salt,
       emailToken: emailToken,
       resetToken: shortid.generate(),
       emailVerified: true,
     },
-    {
-      new: true,
-    }
-  ).exec();
+  });
 
-  if (
-    resetToken === databasePassword.resetToken &&
-    databasePassword.resetToken !== undefined &&
-    databasePassword.resetToken !== null
-  )
-    //  .cookie(`token_${user.cloud}`, token, {
-    //       maxAge: 24 * 60 * 60 * 1000,
-    //       sameSite: 'None',
-    //       httpOnly: true,
-    //       secure: true,
-    //       domain: req.hostname,
-    //       path: '/',
-    //       Partitioned: true,
-    //     })
-    return res.status(200).json({
-      success: true,
-      result: {
-        _id: user._id,
-        name: user.name,
-        surname: user.surname,
-        role: user.role,
-        email: user.email,
-        photo: user.photo,
-        token: token,
-        maxAge: req.body.remember ? 365 : null,
-      },
-      message: 'Successfully resetPassword user',
-    });
+  return res.status(200).json({
+    success: true,
+    result: {
+      _id: user.id,
+      name: user.name,
+      surname: user.surname,
+      role: user.role,
+      email: user.email,
+      photo: user.photo,
+      token: token,
+      maxAge: req.body.remember ? 365 : null,
+    },
+    message: 'Successfully resetPassword user',
+  });
 };
 
 module.exports = resetPassword;

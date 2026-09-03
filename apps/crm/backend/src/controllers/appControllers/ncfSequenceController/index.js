@@ -1,10 +1,8 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 const createCRUDController = require('@/controllers/middlewaresControllers/createCRUDController');
 const { nextNcf } = require('@/helpers/ncf');
 
 const methods = createCRUDController('NcfSequence');
-
-const NcfSequence = mongoose.model('NcfSequence');
 
 methods.next = async (req, res) => {
   try {
@@ -29,10 +27,9 @@ methods.next = async (req, res) => {
 
 methods.seedDefault = async (req, res) => {
   try {
-    const Branch = mongoose.model('Branch');
     const branch = req.body.branch
-      ? await Branch.findOne({ _id: req.body.branch, removed: false })
-      : await Branch.findOne({ removed: false });
+      ? await prisma.branch.findFirst({ where: { id: req.body.branch, removed: false } })
+      : await prisma.branch.findFirst({ where: { removed: false } });
 
     const defaults = [
       { tipo: '01', nombre: 'Factura de crédito fiscal', regimen: 'RST', rangoDesde: 10000001, rangoHasta: 10010000 },
@@ -44,24 +41,28 @@ methods.seedDefault = async (req, res) => {
 
     const created = [];
     for (const d of defaults) {
-      const filter = {
-        tipo: d.tipo,
-        removed: false,
-        branch: branch ? branch._id : { $exists: false },
-      };
-      const existing = await NcfSequence.findOne(filter);
+      const existing = await prisma.ncfSequence.findFirst({
+        where: {
+          tipo: d.tipo,
+          removed: false,
+          branchId: branch ? branch.id : null,
+        },
+      });
+
       if (existing) {
         created.push({ ...d, status: 'ya existía' });
         continue;
       }
-      const doc = new NcfSequence({
-        ...d,
-        branch: branch ? branch._id : null,
-        isActive: true,
-        enabled: true,
-        secuenciaActual: d.rangoDesde - 1,
+
+      await prisma.ncfSequence.create({
+        data: {
+          ...d,
+          branchId: branch ? branch.id : null,
+          isActive: true,
+          enabled: true,
+          secuenciaActual: d.rangoDesde - 1,
+        },
       });
-      await doc.save();
       created.push({ ...d, status: 'creado' });
     }
 

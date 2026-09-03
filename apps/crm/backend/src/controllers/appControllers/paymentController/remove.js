@@ -1,13 +1,9 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Payment');
-const Invoice = mongoose.model('Invoice');
+const prisma = require('@/db/prisma');
 
 const remove = async (req, res) => {
-  // Find document by id and updates with the required fields
-  const previousPayment = await Model.findOne({
-    _id: req.params.id,
-    removed: false,
+  const previousPayment = await prisma.payment.findFirst({
+    where: { id: req.params.id, removed: false },
+    include: { invoice: true },
   });
 
   if (!previousPayment) {
@@ -18,22 +14,13 @@ const remove = async (req, res) => {
     });
   }
 
-  const { _id: paymentId, amount: previousAmount } = previousPayment;
+  const { id: paymentId, amount: previousAmount } = previousPayment;
   const { id: invoiceId, total, discount, credit: previousCredit } = previousPayment.invoice;
 
-  // Find the document by id and delete it
-  let updates = {
-    removed: true,
-  };
-  // Find the document by id and delete it
-  const result = await Model.findOneAndUpdate(
-    { _id: req.params.id, removed: false },
-    { $set: updates },
-    {
-      new: true, // return the new result instead of the old one
-    }
-  ).exec();
-  // If no results found, return document not found
+  const result = await prisma.payment.update({
+    where: { id: req.params.id },
+    data: { removed: true },
+  });
 
   let paymentStatus =
     total - discount === previousCredit - previousAmount
@@ -42,21 +29,14 @@ const remove = async (req, res) => {
       ? 'partially'
       : 'unpaid';
 
-  const updateInvoice = await Invoice.findOneAndUpdate(
-    { _id: invoiceId },
-    {
-      $pull: {
-        payment: paymentId,
-      },
-      $inc: { credit: -previousAmount },
-      $set: {
-        paymentStatus: paymentStatus,
-      },
+  await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      payment: previousPayment.invoice.payment.filter((p) => p !== paymentId),
+      credit: { decrement: previousAmount },
+      paymentStatus,
     },
-    {
-      new: true, // return the new result instead of the old one
-    }
-  ).exec();
+  });
 
   return res.status(200).json({
     success: true,
@@ -64,4 +44,5 @@ const remove = async (req, res) => {
     message: 'Successfully Deleted the document ',
   });
 };
+
 module.exports = remove;

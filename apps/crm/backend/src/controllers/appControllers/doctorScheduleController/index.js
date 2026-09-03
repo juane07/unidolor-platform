@@ -1,12 +1,5 @@
-const mongoose = require('mongoose');
+const prisma = require('@/db/prisma');
 const { catchErrors } = require('@/handlers/errorHandlers');
-
-const DoctorSchedule = mongoose.model('DoctorSchedule');
-const Appointment = mongoose.model('Appointment');
-const Doctor = mongoose.model('Doctor');
-const Branch = mongoose.model('Branch');
-
-const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
 function timeToMinutes(time) {
   const [h, m] = time.split(':').map(Number);
@@ -29,13 +22,13 @@ function generateSlots(schedule, date, existingAppointments) {
     const slotStart = minutesToTime(m);
     const slotEnd = minutesToTime(m + duration);
 
-    const isBooked = existingAppointments.some(appt => {
+    const isBooked = existingAppointments.some((appt) => {
       const apptStart = timeToMinutes(appt.startTime);
       const apptEnd = timeToMinutes(appt.endTime);
       return m < apptEnd && m + duration > apptStart;
     });
 
-    const isException = schedule.exceptions?.some(ex => {
+    const isException = schedule.exceptions?.some((ex) => {
       const exDate = new Date(ex.date).toDateString();
       const checkDate = date.toDateString();
       return exDate === checkDate && ex.isAvailable === false;
@@ -45,8 +38,8 @@ function generateSlots(schedule, date, existingAppointments) {
       slots.push({
         start: slotStart,
         end: slotEnd,
-        doctor: schedule.doctor,
-        branch: schedule.branch,
+        doctor: schedule.doctorId,
+        branch: schedule.branchId,
         date: date.toISOString().split('T')[0],
       });
     }
@@ -61,18 +54,20 @@ const create = catchErrors(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Campos requeridos: doctor, branch, dayOfWeek, startTime, endTime' });
   }
 
-  const schedule = await DoctorSchedule.create({
-    doctor,
-    branch,
-    dayOfWeek,
-    startTime,
-    endTime,
-    slotDuration: slotDuration || 30,
-    appointmentTypes: appointmentTypes || ['primera_vez', 'seguimiento'],
-    priority: priority || 10,
-    validFrom: validFrom ? new Date(validFrom) : null,
-    validUntil: validUntil ? new Date(validUntil) : null,
-    exceptions: exceptions || [],
+  const schedule = await prisma.doctorSchedule.create({
+    data: {
+      doctorId: doctor,
+      branchId: branch,
+      dayOfWeek,
+      startTime,
+      endTime,
+      slotDuration: slotDuration || 30,
+      appointmentTypes: appointmentTypes || ['primera_vez', 'seguimiento'],
+      priority: priority || 10,
+      validFrom: validFrom ? new Date(validFrom) : null,
+      validUntil: validUntil ? new Date(validUntil) : null,
+      exceptions: exceptions || [],
+    },
   });
 
   return res.status(201).json({ success: true, result: schedule });
@@ -81,23 +76,25 @@ const create = catchErrors(async (req, res) => {
 const list = catchErrors(async (req, res) => {
   const { doctor, branch, isActive } = req.query;
   const filter = { removed: false };
-  if (doctor) filter.doctor = doctor;
-  if (branch) filter.branch = branch;
+  if (doctor) filter.doctorId = doctor;
+  if (branch) filter.branchId = branch;
   if (isActive !== undefined) filter.enabled = isActive === 'true';
 
-  const schedules = await DoctorSchedule.find(filter)
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name')
-    .sort({ priority: 1, dayOfWeek: 1, startTime: 1 });
+  const schedules = await prisma.doctorSchedule.findMany({
+    where: filter,
+    include: { doctor: { select: { name: true, specialty: true } }, branch: { select: { name: true } } },
+    orderBy: [{ priority: 'asc' }, { dayOfWeek: 'asc' }, { startTime: 'asc' }],
+  });
 
   return res.status(200).json({ success: true, result: schedules });
 });
 
 const read = catchErrors(async (req, res) => {
   const { id } = req.params;
-  const schedule = await DoctorSchedule.findById(id)
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name');
+  const schedule = await prisma.doctorSchedule.findUnique({
+    where: { id },
+    include: { doctor: { select: { name: true, specialty: true } }, branch: { select: { name: true } } },
+  });
   if (!schedule) {
     return res.status(404).json({ success: false, message: 'Horario no encontrado' });
   }
@@ -106,9 +103,11 @@ const read = catchErrors(async (req, res) => {
 
 const update = catchErrors(async (req, res) => {
   const { id } = req.params;
-  const schedule = await DoctorSchedule.findByIdAndUpdate(id, req.body, { new: true, runValidators: true })
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name');
+  const schedule = await prisma.doctorSchedule.update({
+    where: { id },
+    data: req.body,
+    include: { doctor: { select: { name: true, specialty: true } }, branch: { select: { name: true } } },
+  });
   if (!schedule) {
     return res.status(404).json({ success: false, message: 'Horario no encontrado' });
   }
@@ -117,7 +116,10 @@ const update = catchErrors(async (req, res) => {
 
 const remove = catchErrors(async (req, res) => {
   const { id } = req.params;
-  const schedule = await DoctorSchedule.findByIdAndUpdate(id, { removed: true }, { new: true });
+  const schedule = await prisma.doctorSchedule.update({
+    where: { id },
+    data: { removed: true },
+  });
   if (!schedule) {
     return res.status(404).json({ success: false, message: 'Horario no encontrado' });
   }
@@ -140,33 +142,34 @@ const getAvailableSlots = catchErrors(async (req, res) => {
   }
 
   const filter = { removed: false, enabled: true };
-  if (doctor) filter.doctor = doctor;
-  if (branch) filter.branch = branch;
-  if (type) filter.appointmentTypes = type;
+  if (doctor) filter.doctorId = doctor;
+  if (branch) filter.branchId = branch;
+  if (type) filter.appointmentTypes = { has: type };
 
-  const schedules = await DoctorSchedule.find(filter)
-    .populate('doctor', 'name specialty')
-    .populate('branch', 'name')
-    .sort({ priority: 1 });
+  const schedules = await prisma.doctorSchedule.findMany({
+    where: filter,
+    include: { doctor: { select: { name: true, specialty: true } }, branch: { select: { name: true } } },
+    orderBy: { priority: 'asc' },
+  });
 
   if (schedules.length === 0) {
     return res.status(200).json({ success: true, result: [], message: 'No hay horarios configurados' });
   }
 
-  const appointments = await Appointment.find({
-    removed: false,
-    status: { $in: ['programada', 'realizada'] },
-    date: { $gte: fromDate, $lte: toDate },
-  }).select('date startTime endTime doctor branch');
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      removed: false,
+      status: { in: ['programada', 'realizada'] },
+      date: { gte: fromDate, lte: toDate },
+    },
+    select: { date: true, startTime: true, endTime: true, doctorId: true },
+  });
 
   const apptsByDoctor = {};
-  appointments.forEach(appt => {
-    const key = `${appt.doctor}_${appt.date.toISOString().split('T')[0]}`;
+  appointments.forEach((appt) => {
+    const key = `${appt.doctorId}_${appt.date.toISOString().split('T')[0]}`;
     if (!apptsByDoctor[key]) apptsByDoctor[key] = [];
-    apptsByDoctor[key].push({
-      startTime: appt.startTime,
-      endTime: appt.endTime,
-    });
+    apptsByDoctor[key].push({ startTime: appt.startTime, endTime: appt.endTime });
   });
 
   const allSlots = [];
@@ -174,11 +177,10 @@ const getAvailableSlots = catchErrors(async (req, res) => {
   for (const schedule of schedules) {
     for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
       if (d.getDay() !== schedule.dayOfWeek) continue;
-
       if (schedule.validFrom && d < new Date(schedule.validFrom)) continue;
       if (schedule.validUntil && d > new Date(schedule.validUntil)) continue;
 
-      const existing = apptsByDoctor[`${schedule.doctor._id}_${d.toISOString().split('T')[0]}`] || [];
+      const existing = apptsByDoctor[`${schedule.doctorId}_${d.toISOString().split('T')[0]}`] || [];
       const slots = generateSlots(schedule, d, existing);
       allSlots.push(...slots);
     }
@@ -197,59 +199,61 @@ const getAvailableSlots = catchErrors(async (req, res) => {
 
 const getAvailableForDoctor = catchErrors(async (req, res) => {
   const { doctorId } = req.params;
-  const { from, to, type, limit } = req.query;
-
-  if (!from || !to) {
-    return res.status(400).json({ success: false, message: 'Parámetros requeridos: from, to' });
-  }
-
   req.query.doctor = doctorId;
   return getAvailableSlots(req, res);
 });
 
 const seedBethania = catchErrors(async (req, res) => {
-  const bethania = await Doctor.findOne({ name: { $regex: /bethania/i } });
+  const bethania = await prisma.doctor.findFirst({
+    where: { name: { contains: 'bethania', mode: 'insensitive' } },
+  });
   if (!bethania) {
     return res.status(404).json({ success: false, message: 'Dra. Bethania no encontrada. Créela primero.' });
   }
 
-  const santoDomingo = await Branch.findOne({ name: { $regex: /santo domingo/i } });
+  const santoDomingo = await prisma.branch.findFirst({
+    where: { name: { contains: 'santo domingo', mode: 'insensitive' } },
+  });
   if (!santoDomingo) {
     return res.status(404).json({ success: false, message: 'Sucursal Santo Domingo no encontrada. Créela primero.' });
   }
 
-  const existing = await DoctorSchedule.find({
-    doctor: bethania._id,
-    branch: santoDomingo._id,
-    dayOfWeek: { $in: [3, 4] },
+  const existing = await prisma.doctorSchedule.findMany({
+    where: {
+      doctorId: bethania.id,
+      branchId: santoDomingo.id,
+      dayOfWeek: { in: [3, 4] },
+    },
   });
 
   if (existing.length > 0) {
     return res.status(200).json({ success: true, result: existing, message: 'Ya existen horarios para la Dra. Bethania' });
   }
 
-  const schedules = await DoctorSchedule.create([
-    {
-      doctor: bethania._id,
-      branch: santoDomingo._id,
-      dayOfWeek: 3, // miércoles
-      startTime: '10:30',
-      endTime: '17:00',
-      slotDuration: 30,
-      appointmentTypes: ['primera_vez', 'seguimiento'],
-      priority: 1,
-    },
-    {
-      doctor: bethania._id,
-      branch: santoDomingo._id,
-      dayOfWeek: 4, // jueves
-      startTime: '10:30',
-      endTime: '17:00',
-      slotDuration: 30,
-      appointmentTypes: ['primera_vez', 'seguimiento'],
-      priority: 1,
-    },
-  ]);
+  const schedules = await prisma.doctorSchedule.createMany({
+    data: [
+      {
+        doctorId: bethania.id,
+        branchId: santoDomingo.id,
+        dayOfWeek: 3,
+        startTime: '10:30',
+        endTime: '17:00',
+        slotDuration: 30,
+        appointmentTypes: ['primera_vez', 'seguimiento'],
+        priority: 1,
+      },
+      {
+        doctorId: bethania.id,
+        branchId: santoDomingo.id,
+        dayOfWeek: 4,
+        startTime: '10:30',
+        endTime: '17:00',
+        slotDuration: 30,
+        appointmentTypes: ['primera_vez', 'seguimiento'],
+        priority: 1,
+      },
+    ],
+  });
 
   return res.status(201).json({ success: true, result: schedules, message: 'Horarios de la Dra. Bethania creados (miércoles y jueves 10:30am-5pm)' });
 });

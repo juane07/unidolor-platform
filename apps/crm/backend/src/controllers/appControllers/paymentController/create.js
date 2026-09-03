@@ -1,13 +1,7 @@
-const mongoose = require('mongoose');
-
-const Model = mongoose.model('Payment');
-const Invoice = mongoose.model('Invoice');
-const custom = require('@/controllers/pdfController');
-
+const prisma = require('@/db/prisma');
 const { calculate } = require('@/helpers');
 
 const create = async (req, res) => {
-  // Creating a new document in the collection
   if (req.body.amount === 0) {
     return res.status(202).json({
       success: false,
@@ -16,17 +10,15 @@ const create = async (req, res) => {
     });
   }
 
-  const currentInvoice = await Invoice.findOne({
-    _id: req.body.invoice,
-    removed: false,
+  const currentInvoice = await prisma.invoice.findFirst({
+    where: { id: req.body.invoice, removed: false },
   });
 
-  const {
-    total: previousTotal,
-    discount: previousDiscount,
-    credit: previousCredit,
-  } = currentInvoice;
+  if (!currentInvoice) {
+    return res.status(404).json({ success: false, result: null, message: 'Invoice not found' });
+  }
 
+  const { total: previousTotal, discount: previousDiscount, credit: previousCredit } = currentInvoice;
   const maxAmount = calculate.sub(calculate.sub(previousTotal, previousDiscount), previousCredit);
 
   if (req.body.amount > maxAmount) {
@@ -36,43 +28,39 @@ const create = async (req, res) => {
       message: `The Max Amount you can add is ${maxAmount}`,
     });
   }
-  req.body['createdBy'] = req.admin._id;
 
-  const Doctor = mongoose.model('Doctor');
   let commissionRate = 0;
   let doctorId = null;
 
-  if (currentInvoice.doctor) {
-    const doctor = await Doctor.findById(currentInvoice.doctor);
+  if (currentInvoice.doctorId) {
+    const doctor = await prisma.doctor.findUnique({ where: { id: currentInvoice.doctorId } });
     if (doctor) {
       commissionRate = doctor.commissionRate || 0;
-      doctorId = doctor._id;
+      doctorId = doctor.id;
     }
   }
+
+  const createData = {
+    ...req.body,
+    createdById: req.admin.id,
+  };
 
   if (commissionRate > 0) {
-    req.body['commissionRate'] = commissionRate;
-    req.body['commissionAmount'] = calculate.multiply(req.body.amount, commissionRate / 100);
-    req.body['doctor'] = doctorId;
+    createData.commissionRate = commissionRate;
+    createData.commissionAmount = calculate.multiply(req.body.amount, commissionRate / 100);
+    createData.doctorId = doctorId;
   }
 
-  const result = await Model.create(req.body);
+  const result = await prisma.payment.create({ data: createData });
 
-  const fileId = 'payment-' + result._id + '.pdf';
-  const updatePath = await Model.findOneAndUpdate(
-    {
-      _id: result._id.toString(),
-      removed: false,
-    },
-    { pdf: fileId },
-    {
-      new: true,
-    }
-  ).exec();
-  // Returning successfull response
+  const fileId = 'payment-' + result.id + '.pdf';
+  const updatePath = await prisma.payment.update({
+    where: { id: result.id },
+    data: { pdf: fileId },
+  });
 
-  const { _id: paymentId, amount } = result;
-  const { id: invoiceId, total, discount, credit } = currentInvoice;
+  const { id: paymentId, amount } = result;
+  const { total, discount, credit } = currentInvoice;
 
   let paymentStatus =
     calculate.sub(total, discount) === calculate.add(credit, amount)
@@ -81,18 +69,14 @@ const create = async (req, res) => {
       ? 'partially'
       : 'unpaid';
 
-  const invoiceUpdate = await Invoice.findOneAndUpdate(
-    { _id: req.body.invoice },
-    {
-      $push: { payment: paymentId.toString() },
-      $inc: { credit: amount },
-      $set: { paymentStatus: paymentStatus },
+  await prisma.invoice.update({
+    where: { id: currentInvoice.id },
+    data: {
+      payment: { push: paymentId },
+      credit: { increment: amount },
+      paymentStatus,
     },
-    {
-      new: true, // return the new result instead of the old one
-      runValidators: true,
-    }
-  ).exec();
+  });
 
   return res.status(200).json({
     success: true,

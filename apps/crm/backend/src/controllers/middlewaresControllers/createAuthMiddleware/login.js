@@ -1,15 +1,10 @@
 const Joi = require('joi');
-
-const mongoose = require('mongoose');
-
+const prisma = require('@/db/prisma');
 const authUser = require('./authUser');
 
 const login = async (req, res, { userModel }) => {
-  const UserPasswordModel = mongoose.model(userModel + 'Password');
-  const UserModel = mongoose.model(userModel);
   const { email, password } = req.body;
 
-  // validate
   const objectSchema = Joi.object({
     email: Joi.string()
       .email({ tlds: { allow: true } })
@@ -28,9 +23,11 @@ const login = async (req, res, { userModel }) => {
     });
   }
 
-  const user = await UserModel.findOne({ email: email, removed: false });
+  const user = await prisma.admin.findFirst({
+    where: { email: email, removed: false },
+    include: { passwordRecords: { where: { removed: false } } },
+  });
 
-  // console.log(user);
   if (!user)
     return res.status(404).json({
       success: false,
@@ -38,21 +35,20 @@ const login = async (req, res, { userModel }) => {
       message: 'No account with this email has been registered.',
     });
 
-  const databasePassword = await UserPasswordModel.findOne({ user: user._id, removed: false });
+  const databasePassword = user.passwordRecords[0];
 
-  if (!user.enabled)
+  if (!user.isActive)
     return res.status(409).json({
       success: false,
       result: null,
       message: 'Your account is disabled, contact your account adminstrator',
     });
 
-  //  authUser if your has correct password
   authUser(req, res, {
     user,
     databasePassword,
     password,
-    UserPasswordModel,
+    prismaClient: prisma.adminPassword,
   });
 };
 
