@@ -3,12 +3,12 @@ services:
     name: unidolor-crm
     runtime: node
     plan: free
-    buildCommand: corepack enable && corepack prepare pnpm@11.20.0 --activate && pnpm install && pnpm --filter @unidolor/crm-frontend build && cd apps/crm/backend && npx prisma generate
+    buildCommand: corepack enable && corepack prepare pnpm@11.20.0 --activate && pnpm install && pnpm --filter @unidolor/core build && pnpm --filter @unidolor/crm-frontend build && cd apps/crm/backend && npx prisma generate
     startCommand: cd apps/crm/backend && node src/server.js
     healthCheckPath: /
     envVars:
       - key: DATABASE_URL
-        sync: false
+        value: "postgresql://postgres.xewjjjpxtobudqxvnukw:unidolor123455@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
       - key: JWT_SECRET
         value: unidolor_jwt_secret_2026
       - key: PORT
