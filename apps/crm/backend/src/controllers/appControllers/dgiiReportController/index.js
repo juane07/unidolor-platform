@@ -31,7 +31,7 @@ methods.generate = async (req, res) => {
         ncf: inv.ncf || '',
         ncfTipo: inv.ncfTipo || '01',
         regimen: inv.regimen || 'RST',
-        rnc: inv.client?.identity_number || '',
+        rnc: inv.client?.identityNumber || '',
         cliente: inv.client?.name || '',
         fecha: inv.date,
         numero: inv.number,
@@ -54,7 +54,7 @@ methods.generate = async (req, res) => {
       data = whs.map((w) => ({
         ncf: w.ncf || '',
         tipo: w.tipo,
-        rnc: w.client?.identity_number || '',
+        rnc: w.client?.identityNumber || '',
         cliente: w.client?.name || '',
         base: w.baseAmount,
         porcentaje: w.percentage,
@@ -75,7 +75,7 @@ methods.generate = async (req, res) => {
       data = invoices.map((inv) => ({
         ncf: inv.ncf || '',
         ncfTipo: inv.ncfTipo || '01',
-        rnc: inv.client?.identity_number || '',
+        rnc: inv.client?.identityNumber || '',
         cliente: inv.client?.name || '',
         fecha: inv.date,
         total: inv.total,

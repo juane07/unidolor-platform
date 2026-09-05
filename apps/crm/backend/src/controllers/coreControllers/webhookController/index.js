@@ -45,7 +45,7 @@ const handleBotWebhook = async (req, res) => {
     where: {
       OR: [
         { phone: telefono },
-        ...(cedula ? [{ identity_number: cedula }] : []),
+        ...(cedula ? [{ identityNumber: cedula }] : []),
       ],
     },
   });
@@ -57,7 +57,7 @@ const handleBotWebhook = async (req, res) => {
         phone: telefono,
         address: direccion || '',
         email: email || '',
-        identity_number: cedula || '',
+        identityNumber: cedula || '',
         metadata: {
           fecha_nacimiento, seguro, afiliado, genero, sucursal, requisitos,
           servicio, notas: finalNotes, caller_phone, caller_name,
@@ -70,7 +70,7 @@ const handleBotWebhook = async (req, res) => {
     const updates = {};
     if (direccion && !client.address) updates.address = direccion;
     if (email && !client.email) updates.email = email;
-    if (cedula && !client.identity_number) updates.identity_number = cedula;
+    if (cedula && !client.identityNumber) updates.identityNumber = cedula;
     const metaUpdates = {};
     if (fecha_nacimiento) metaUpdates.fecha_nacimiento = fecha_nacimiento;
     if (seguro) metaUpdates.seguro = seguro;

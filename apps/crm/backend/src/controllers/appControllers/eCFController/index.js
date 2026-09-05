@@ -46,7 +46,7 @@ function generateXml(invoice, client, ncf, tipo, regimen) {
     <LugarDeEmision>1</LugarDeEmision>
     <RegimenSpecial>${regimen}</RegimenSpecial>
     <NumeroComprobanteFiscal>${ncf}</NumeroComprobanteFiscal>
-    <RncCliente>${client.identity_number || ''}</RncCliente>
+    <RncCliente>${client.identityNumber || ''}</RncCliente>
     <RazonSocialCliente>${client.name || ''}</RazonSocialCliente>
     <FechaEmision>${y}-${m}-${d}</FechaEmision>
     <Moneda>${invoice.currency || 'DOP'}</Moneda>
@@ -86,7 +86,7 @@ methods.submit = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invoice already submitted to DGII' });
     }
 
-    const rnc = client.identity_number || '';
+    const rnc = client.identityNumber || '';
     const encf = generateEncfString(tipo, parseInt(ncf.slice(2), 10), regimen, rnc, new Date());
     const xmlContent = generateXml(invoice, client, ncf, tipo, regimen);
     const signedXml = `<!-- Firma digital pendiente de implementar -->\n${xmlContent}`;

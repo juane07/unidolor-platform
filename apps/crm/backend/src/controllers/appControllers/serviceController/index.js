@@ -50,7 +50,7 @@ function modelController() {
             items: { path: '$', array_contains: [{ service: id }] },
           },
           include: {
-            client: { select: { name: true, identity_number: true, phone: true } },
+            client: { select: { name: true, identityNumber: true, phone: true } },
             branch: { select: { name: true } },
             doctor: { select: { name: true } },
           },
