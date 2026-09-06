@@ -1,19 +1,13 @@
 /** Tipos base compartidos del ecosistema Unidolor (Cerebro + CRM + ChatBot). */
 
 export type EstadoFlujo =
-  | 'solicitud'
-  | 'recepcion_informacion'
-  | 'verificacion_datos'
-  | 'clasificacion_caso'
-  | 'cotizacion_autorizacion'
-  | 'programacion'
-  | 'confirmacion'
-  | 'preparacion'
-  | 'ejecucion'
-  | 'documentacion'
-  | 'facturacion'
+  | 'cotizacion'
+  | 'cita_solicitada'
+  | 'cita_programada'
+  | 'visita'
+  | 'orden_servicio'
+  | 'factura'
   | 'seguimiento'
-  | 'cierre_caso'
   | 'perdido';
 
 export type ModalidadServicio = 'clinica' | 'domicilio' | 'telemedicina';
