@@ -32,7 +32,7 @@ const SOURCE_COLORS = {
 
 function KanbanCard({ item }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: item._id,
+    id: item.id,
     data: { item, stage: item.stage },
   });
 
@@ -86,7 +86,7 @@ function Column({ stage, items }) {
       </div>
       <div style={{ minHeight: 100 }}>
         {items.map((item) => (
-          <KanbanCard key={item._id} item={item} />
+          <KanbanCard key={item.id} item={item} />
         ))}
       </div>
     </div>
@@ -139,7 +139,7 @@ export default function KanbanBoard({ entity }) {
       if (newStage === currentItem.stage) return;
 
       setItems((prev) =>
-        prev.map((i) => (i._id === itemId ? { ...i, stage: newStage } : i))
+        prev.map((i) => (i.id === itemId ? { ...i, stage: newStage } : i))
       );
 
       const res = await request.update({
@@ -150,7 +150,7 @@ export default function KanbanBoard({ entity }) {
 
       if (!res.success) {
         setItems((prev) =>
-          prev.map((i) => (i._id === itemId ? { ...i, stage: currentItem.stage } : i))
+          prev.map((i) => (i.id === itemId ? { ...i, stage: currentItem.stage } : i))
         );
         message.error(translate('error_updating_stage'));
       }
