@@ -13,19 +13,13 @@ import { request } from '@/request';
 import useLanguage from '@/locale/useLanguage';
 
 const STAGES = [
-  { key: 'solicitud', label: 'Solicitud', color: 'blue' },
-  { key: 'recepcion_informacion', label: 'Recepción de información', color: 'cyan' },
-  { key: 'verificacion_datos', label: 'Verificación de datos', color: 'geekblue' },
-  { key: 'clasificacion_caso', label: 'Clasificación del caso', color: 'gold' },
-  { key: 'cotizacion_autorizacion', label: 'Cotización / Autorización', color: 'purple' },
-  { key: 'programacion', label: 'Programación', color: 'magenta' },
-  { key: 'confirmacion', label: 'Confirmación', color: 'orange' },
-  { key: 'preparacion', label: 'Preparación', color: 'volcano' },
-  { key: 'ejecucion', label: 'Ejecución', color: 'green' },
-  { key: 'documentacion', label: 'Documentación', color: 'lime' },
-  { key: 'facturacion', label: 'Facturación', color: 'green' },
+  { key: 'cotizacion', label: 'Cotización', color: 'blue' },
+  { key: 'cita_solicitada', label: 'Cita solicitada', color: 'cyan' },
+  { key: 'cita_programada', label: 'Cita programada', color: 'geekblue' },
+  { key: 'visita', label: 'Visita realizada', color: 'gold' },
+  { key: 'orden_servicio', label: 'Orden de servicio', color: 'purple' },
+  { key: 'factura', label: 'Facturado', color: 'green' },
   { key: 'seguimiento', label: 'Seguimiento', color: 'cyan' },
-  { key: 'cierre_caso', label: 'Cierre del caso', color: 'blue' },
   { key: 'perdido', label: 'Perdido', color: 'red' },
 ];
 
