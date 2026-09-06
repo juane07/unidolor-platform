@@ -154,7 +154,7 @@ export default function ClientDetail() {
           </thead>
           <tbody>
             {items.map((item, idx) => (
-              <tr key={item._id || idx} style={{ borderBottom: '1px solid #f0f0f0', transition: 'background 0.2s' }}>
+              <tr key={item.id || idx} style={{ borderBottom: '1px solid #f0f0f0', transition: 'background 0.2s' }}>
                 {columns.map(col => {
                   let value = col.dataIndex.split('.').reduce((obj, key) => obj?.[key], item);
                   let display = value;

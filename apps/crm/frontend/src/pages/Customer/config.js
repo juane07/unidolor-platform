@@ -1,7 +1,7 @@
 export const fields = {
   name: {
     type: 'link',
-    url: (record) => `/client/detail/${record._id}`,
+    url: (record) => `/client/detail/${record.id}`,
   },
   type: {
     type: 'selectWithTranslation',

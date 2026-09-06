@@ -52,7 +52,7 @@ function AppointmentCalendar({ entity, onRefresh }) {
     return (
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {list.slice(0, 3).map((item) => (
-          <li key={item._id} style={{ fontSize: 11, lineHeight: '1.4' }}>
+          <li key={item.id} style={{ fontSize: 11, lineHeight: '1.4' }}>
             <Badge
               color={STATUS_COLORS[item.status] || 'default'}
               text={(item.startTime || dayjs(item.date).format('HH:mm')) + ' ' + (item.client?.name || '')}

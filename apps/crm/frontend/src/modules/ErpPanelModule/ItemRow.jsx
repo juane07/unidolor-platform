@@ -30,14 +30,14 @@ export default function ItemRow({ field, remove, current = null }) {
 
   const handleServiceSelect = useCallback(
     (serviceId) => {
-      const service = serviceList.find((s) => s._id === serviceId);
+      const service = serviceList.find((s) => s.id === serviceId);
       if (!service) return;
       const currentItems = form.getFieldValue('items') || [];
       currentItems[field.name] = {
         ...(currentItems[field.name] || {}),
         itemName: service.name,
         price: service.basePrice,
-        service: service._id,
+        service: service.id,
         cupsCode: service.cupsCode || '',
         simonLevel: service.simonLevel || '',
       };
@@ -101,7 +101,7 @@ export default function ItemRow({ field, remove, current = null }) {
           }}
           style={{ width: '100%' }}
           options={serviceList.map((s) => ({
-            value: s._id,
+            value: s.id,
             label: `${s.name}${s.cupsCode ? ` | CUPS: ${s.cupsCode}` : ''}`,
           }))}
         />

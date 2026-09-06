@@ -80,15 +80,15 @@ export default function DataTable({ config, extra = [] }) {
 
   const handleRead = (record) => {
     dispatch(erp.currentItem({ data: record }));
-    navigate(`/${entity}/read/${record._id}`);
+    navigate(`/${entity}/read/${record.id}`);
   };
   const handleEdit = (record) => {
     const data = { ...record };
     dispatch(erp.currentAction({ actionType: 'update', data }));
-    navigate(`/${entity}/update/${record._id}`);
+    navigate(`/${entity}/update/${record.id}`);
   };
   const handleDownload = (record) => {
-    window.open(`${DOWNLOAD_BASE_URL}${entity}/${entity}-${record._id}.pdf`, '_blank');
+    window.open(`${DOWNLOAD_BASE_URL}${entity}/${entity}-${record.id}.pdf`, '_blank');
   };
 
   const handleDelete = (record) => {
@@ -105,7 +105,7 @@ export default function DataTable({ config, extra = [] }) {
       cancelText: translate('Cancel'),
       onOk: async () => {
         const data = await request.post({
-          entity: `invoice/anular/${record._id}`,
+          entity: `invoice/anular/${record.id}`,
           jsonData: {},
         });
         if (data.success) {
@@ -118,7 +118,7 @@ export default function DataTable({ config, extra = [] }) {
 
   const handleRecordPayment = (record) => {
     dispatch(erp.currentItem({ data: record }));
-    navigate(`/invoice/pay/${record._id}`);
+    navigate(`/invoice/pay/${record.id}`);
   };
 
   dataTableColumns = [
@@ -234,7 +234,7 @@ export default function DataTable({ config, extra = [] }) {
 
       <Table
         columns={dataTableColumns}
-        rowKey={(item) => item._id}
+        rowKey={(item) => item.id}
         dataSource={dataSource}
         pagination={pagination}
         loading={listIsLoading}

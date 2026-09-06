@@ -188,7 +188,7 @@ export function dataForTable({ fields, translate, moneyFormatter, dateFormat }) 
         title: field.label ? translate(field.label) : translate(key),
         dataIndex: keyIndex,
         render: (_, record) => {
-          const url = field.url ? field.url(record) : `#${record._id}`;
+          const url = field.url ? field.url(record) : `#${record.id}`;
           return (
             <a href={url} style={{ color: '#1890ff', cursor: 'pointer', textDecoration: 'none' }}>
               {record[key]}

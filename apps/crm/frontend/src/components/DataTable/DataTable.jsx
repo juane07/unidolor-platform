@@ -206,7 +206,7 @@ export default function DataTable({ config, extra = [] }) {
 
       <Table
         columns={dataTableColumns}
-        rowKey={(item) => item._id}
+        rowKey={(item) => item.id}
         dataSource={dataSource}
         pagination={pagination}
         loading={listIsLoading}

@@ -37,7 +37,7 @@ export default function NotificationBell() {
   };
 
   const handleClick = (item) => {
-    handleMarkRead(item._id);
+    handleMarkRead(item.id);
     if (item.link) navigate(item.link);
     setOpen(false);
   };

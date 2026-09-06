@@ -2,7 +2,7 @@ export const fields = {
   name: { 
     type: 'link', 
     label: 'Nombre',
-    url: (record) => `/service/detail/${record._id}`,
+    url: (record) => `/service/detail/${record.id}`,
   },
   cupsCode: { type: 'string', label: 'Código CUPS' },
   simonLevel: {

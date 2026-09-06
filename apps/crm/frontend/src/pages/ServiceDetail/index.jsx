@@ -139,7 +139,7 @@ export default function ServiceDetail() {
           </thead>
           <tbody>
             {items.map((item, idx) => (
-              <tr key={item.invoiceId || item._id || idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
+              <tr key={item.invoiceId || item.id || idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
                 {columns.map(col => {
                   let value = col.dataIndex.split('.').reduce((obj, key) => obj?.[key], item);
                   let display = value;

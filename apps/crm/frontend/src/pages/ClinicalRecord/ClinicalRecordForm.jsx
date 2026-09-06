@@ -24,7 +24,7 @@ export default function ClinicalRecordForm() {
         if (res.success && res.result) {
           setServiceOptions(
             res.result.map((s) => ({
-              value: s._id,
+              value: s.id,
               label: `${s.name}${s.cupsCode ? ` — CUPS: ${s.cupsCode}` : ''}`,
             }))
           );
