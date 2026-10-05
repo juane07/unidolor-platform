@@ -8,12 +8,12 @@ services:
     healthCheckPath: /
     envVars:
       - key: DATABASE_URL
-        value: "postgresql://postgres.xewjjjpxtobudqxvnukw:unidolor123455@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
+        value: "postgresql://USER:PASSWORD@HOST:5432/postgres"
       - key: JWT_SECRET
-        value: unidolor_jwt_secret_2026
+        value: REPLACE_WITH_SECRET
       - key: PORT
         value: "8080"
       - key: WEBHOOK_API_KEY
-        value: unidolor-webhook-key-2026
+        value: REPLACE_WITH_KEY
       - key: NODE_ENV
         value: production
