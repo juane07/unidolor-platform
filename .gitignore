@@ -31,3 +31,13 @@ Thumbs.db
 # Temporary
 tmp/
 *.tmp
+
+# Credentials — never commit
+*.pem
+*.key
+*.p12
+credentials*
+*credentials*.txt
+temp.env
+secrets/
+*.local
